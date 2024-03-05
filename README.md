@@ -32,5 +32,12 @@ obj <- RunUMAP(obj, dims = 1:30, reduction = "pca", reduction.name = "umap.unint
 library(ggplot2)
 DimPlot(obj, group.by = "ident", split.by = 'orig.ident', label = T, label.size = 8, sizes.highlight = 8,  label.color = "black", pt.size = 2) + theme(legend.position = "right", text = element_text(size = 30))
 
-## checking with the reference
+## Checking with the reference
+anchors <- FindTransferAnchors(reference = reference_SCT, query = obj, normalization.method = "SCT") # 289 anchors
+predictions.assay <- TransferData(anchorset = anchors, refdata = reference_SCT$category, prediction.assay = TRUE,
+                                  weight.reduction = obj[["pca"]], dims = 1:25)
+obj[["predictions"]] <- predictions.assay
+Idents(obj) = predictions.assay
+DimPlot(obj, group.by = "predictions", split.by = 'orig.ident', label = T, label.size = 8, sizes.highlight = 8,  label.color = "black", pt.size = 2) + theme(legend.position = "right", text = element_text(size = 30))
+
 
