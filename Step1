@@ -57,3 +57,50 @@ top10 = head(VariableFeatures(seurat.obj), 10)
 
 # Plot varialble features with and without labels
 plot1 = VariableFeaturePlot(seurat.obj)
+LabelPoints(plot = plot1, points = top10, repel = TRUE)
+
+# Scaling
+all.genes = rownames(seurat.obj)
+seurat.obj = ScaleData(seurat.obj, features = all.genes)
+
+# perform linear dimensonality reduction
+seurat.obj = RunPCA(seurat.obj, features = VariableFeatures(object = seurat.obj))
+DimHeatmap(seurat.obj, dims = 1, cells = 500, balanced = TRUE)
+
+# determine demensionality of the data
+ElbowPlot(seurat.obj)
+
+# Clustering
+seurat.obj = FindNeighbors(seurat.obj, dims = 1:15)
+
+# Understanding resolution
+seurat.obj = FindClusters(seurat.obj, resoltuon = c(0.3, 0.5, 0.7, 1))
+View(seurat.obj@meta.data)
+DimPlot(seurat.obj, group.by = "RNA_snn_res.0.8", label = TRUE)
+
+# non-linear dimensionality reduction
+seurat.obj = RunUMAP(seurat.obj, dims = 1:15)
+DimPlot(seurat.obj, reduction = "umap")
+
+# For annotating cells with reference it is not necessary for filtering low expression of genes or cells and annotating base on category of the reference
+pbmc_counts = GetAssayData(obj, slot = "count")
+logcounts(cortex_sc) = assay(cortex_sc, "X")
+library(SingleR)
+pred = SingleR(test = pbmc_counts, ref = cortex_sc, labels=cortex_sc$category)
+obj$singleR.labels = pred$labels[match(rownames(obj@meta.data), rownames(pred))]
+DimPlot(obj, reduction = "umap", group.by = "singleR.labels", pt.size = 4)
+
+# For annotating cells with reference it is not necessary for filtering low expression of genes or cells and annotating base on Integrated.5 of the reference
+pbmc_counts = GetAssayData(obj, slot = "count")
+logcounts(cortex_sc) = assay(cortex_sc, "X")
+library(SingleR)
+pred_1 = SingleR(test = pbmc_counts, ref = cortex_sc, labels=cortex_sc$Integrated_05)
+obj$singleR.labels_1 = pred_1$labels[match(rownames(obj@meta.data), rownames(pred))]
+DimPlot(obj, reduction = "umap", group.by = "singleR.labels_1", pt.size = 4)
+
+# Annotation diagnostics
+
+# based on the scores within cells
+pred
+pred$scores
+plotScoreHeatmap(pred)
