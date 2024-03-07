@@ -104,3 +104,25 @@ DimPlot(obj, reduction = "umap", group.by = "singleR.labels_1", pt.size = 4)
 pred
 pred$scores
 plotScoreHeatmap(pred)
+plotScoreHeatmap(pred_1)
+
+# based on deltas across cells
+plotDeltaDistribution(pred)
+plotDeltaDistribution(pred_1)
+
+# Comparing unsupervised clustering
+tab = table(Assigned = pred$labels, Clusters = obj$seurat_clusters)
+tab_1 = table(Assigned = pred_1$labels, Clusters = obj$seurat_clusters)
+
+# clustering cell annotation and seurat clusters
+DimPlot(obj, reduction = "umap", group.by = "singleR.labels_1", label = T, pt.size = 2, label.size = 6) + DimPlot(obj, reduction = "umap", group.by = "seurat_clusters", label = T, pt.size = 2, label.size = 6)
+
+
+# monocles workflow
+# monocles 3 required cell_data_set object
+# conver seurat object to cel_data_set object for monocle3
+
+cds = as.cell_data_set(obj)
+
+# to get cell metadata
+cds
