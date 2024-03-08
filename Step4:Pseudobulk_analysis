@@ -1,0 +1,72 @@
+# Pseudobulk for infected and uninfected groups
+
+library(Seurat)
+library(ggplot2)
+library(dplyr)
+library(SummarizedExperiment)
+library(SingleCellExperiment)
+library(Seurat)
+library(glmGamPoi)
+cortex_sc = readRDS(glue::glue("C:\\Users\\leh\\OneDrive - TUNI.fi\\Documents\\Data\\cap_3\\outs\\reference_gut\\Full_obj_log_counts_soupx_v2_DUOdata.RDS"))
+logcounts(cortex_sc) = assay(cortex_sc, "X")
+### For loading h5 file
+library(Seurat)
+library(SeuratDisk)
+library(SeuratData)
+library(hdf5r)
+
+# Loading h5 file in R
+
+sample1 = Read10X_h5(filename = "C://Users//leh//OneDrive - TUNI.fi//Documents//Data//scRNA_2024//sample1//filtered_feature_bc_matrix.h5") 
+sample2 = Read10X_h5(filename = "C://Users//leh//OneDrive - TUNI.fi//Documents//Data//scRNA_2024//sample2//filtered_feature_bc_matrix.h5") 
+sample3 = Read10X_h5(filename = "C://Users//leh//OneDrive - TUNI.fi//Documents//Data//scRNA_2024//sample3//filtered_feature_bc_matrix.h5") 
+sample4 = Read10X_h5(filename = "C://Users//leh//OneDrive - TUNI.fi//Documents//Data//scRNA_2024//sample4//filtered_feature_bc_matrix.h5") 
+
+obj1 = CreateSeuratObject(counts = sample1)
+obj2 = CreateSeuratObject(counts = sample2)
+obj3 = CreateSeuratObject(counts = sample3)
+obj4 = CreateSeuratObject(counts = sample4)
+
+obj = merge(obj1, y = c(obj2, obj3, obj4) , add.cell.ids = c("non_EVs", "non_EVS", "EVs", "EVs"), project = "scRNA-Intestinal organoids")
+
+# Working on single cell data for pseudobulk
+library(SingleR)
+obj = CreateSeuratObject(counts = sample1)
+obj = NormalizeData(obj)
+obj = FindVariableFeatures(obj)
+obj = ScaleData(obj)
+obj = RunPCA(obj)
+obj = FindNeighbors(obj, dims = 1:30, reduction = "pca")
+obj = FindClusters(obj, verbose = FALSE)
+obj = RunUMAP(obj, dims = 1:30)
+pbmc_counts = GetAssayData(obj, slot = "count")
+logcounts(cortex_sc) = assay(cortex_sc, "X")
+library(SingleR)
+
+# modify on 8.3.2024
+counts = obj@assays$RNA@layers$counts
+metadata = obj@meta.data
+
+### set up metadata as desired for aggregation and DE analysis 
+metadata$seurat_cluster = factor(obj@active.ident)
+
+# Create single cell exepriment object
+sce = SingleCellExperiment(assays = list(counts = counts), colData = metadata)
+
+# Load libraries for further analysis
+# Load libraries
+library(tidyverse)
+library(cowplot)
+library(Matrix.utils)
+library(edgeR)
+library(Matrix)
+library(reshape2)
+library(S4Vectors)
+library(SingleCellExperiment)
+library(pheatmap)
+library(apeglm)
+library(png)
+library(DESeq2)
+library(RColorBrewer)
+library(data.table)
+
