@@ -1,0 +1,133 @@
+### scRNA analysis
+
+# scRNAseq-for-EVS-in-hOrganoids
+Based on Seurat and Cell2location in R
+### For reference
+
+library(dplyr)
+library(SummarizedExperiment)
+library(SingleCellExperiment)
+library(Seurat)
+BiocManager::install('glmGamPoi')
+library(glmGamPoi)
+cortex_sc = readRDS(glue::glue("C:\\Users\\leh\\OneDrive - TUNI.fi\\Documents\\Data\\cap_3\\outs\\reference_gut\\Full_obj_log_counts_soupx_v2_DUOdata.RDS"))
+logcounts(cortex_sc) = assay(cortex_sc, "X")
+
+reference = as.Seurat(cortex_sc, "X")
+reference_SCT <- Seurat::SCTransform(reference, assay = NULL) %>%
+  Seurat::RunPCA(., verbose = FALSE) %>%
+  Seurat::RunUMAP(., dims = 1:30, verbose = FALSE)
+
+### For loading h5 file
+library(Seurat)
+library(SeuratDisk)
+library(SeuratData)
+library(hdf5r)
+
+# Loading h5 file in R
+
+sample3 = Read10X_h5(filename = "C://Users//leh//OneDrive - TUNI.fi//Documents//Data//scRNA_2024//sample3//filtered_feature_bc_matrix.h5") 
+sample4 = Read10X_h5(filename = "C://Users//leh//OneDrive - TUNI.fi//Documents//Data//scRNA_2024//sample4//filtered_feature_bc_matrix.h5") 
+
+obj3 = CreateSeuratObject(counts = sample3)
+obj4 = CreateSeuratObject(counts = sample4)
+
+obj = merge(obj3, y = obj4, add.cell.ids = c("infected1", "infected2"), project = "scRNA-EVs-infection")
+
+# % MT seurat
+obj = merge(obj3, y = obj4, add.cell.ids = c("infected1", "infected2"), project = "scRNA-EVs-infection")
+obj[["percent.mt"]] = PercentageFeatureSet(obj, pattern = "^MT-")
+View(obj@meta.data)
+VlnPlot(obj, features = c("nFeature_RNA", "nCount_RNA", "percent.mt"), ncol = 3)
+library(ggplot2)
+FeatureScatter(obj, feature1 = "nCount_RNA", feature2 = "nFeature_RNA") + geom_smooth(method = "lm")
+
+# To understand the seurat object from infected groups
+#Filtering
+seurat.obj = subset(obj, subset = nFeature_RNA > 200 & nFeature_RNA < 4500 & percent.mt < 10) # for removing genes/cells far from the line
+
+# Normalize data
+seurat.obj = NormalizeData(seurat.obj)
+
+# Identify highly variable features
+seurat.obj = FindVariableFeatures(seurat.obj, selection.method = "vst", nfeatures = 2000)
+
+# Identify the 10 most highly variable genes
+top10 = head(VariableFeatures(seurat.obj), 10)
+
+# Plot varialble features with and without labels
+plot1 = VariableFeaturePlot(seurat.obj)
+LabelPoints(plot = plot1, points = top10, repel = TRUE)
+
+# Scaling
+all.genes = rownames(seurat.obj)
+seurat.obj = ScaleData(seurat.obj, features = all.genes)
+
+# perform linear dimensonality reduction
+seurat.obj = RunPCA(seurat.obj, features = VariableFeatures(object = seurat.obj))
+DimHeatmap(seurat.obj, dims = 1, cells = 500, balanced = TRUE)
+
+# determine demensionality of the data
+ElbowPlot(seurat.obj)
+
+# Clustering
+seurat.obj = FindNeighbors(seurat.obj, dims = 1:15)
+
+# Understanding resolution
+seurat.obj = FindClusters(seurat.obj, resoltuon = c(0.3, 0.5, 0.7, 1))
+View(seurat.obj@meta.data)
+DimPlot(seurat.obj, group.by = "RNA_snn_res.0.8", label = TRUE)
+
+# non-linear dimensionality reduction
+seurat.obj = RunUMAP(seurat.obj, dims = 1:15)
+DimPlot(seurat.obj, reduction = "umap")
+
+# For annotating cells with reference it is not necessary for filtering low expression of genes or cells and annotating base on category of the reference
+obj = CreateSeuratObject(counts = sample1)
+obj = NormalizeData(obj)
+obj = FindVariableFeatures(obj)
+obj = ScaleData(obj)
+obj = RunPCA(obj)
+obj = FindNeighbors(obj, dims = 1:30, reduction = "pca")
+obj = FindClusters(obj, verbose = FALSE)
+obj = RunUMAP(obj, dims = 1:30)
+pbmc_counts = GetAssayData(obj, slot = "count")
+logcounts(cortex_sc) = assay(cortex_sc, "X")
+library(SingleR)
+pred = SingleR(test = pbmc_counts, ref = cortex_sc, labels=cortex_sc$category)
+obj$singleR.labels = pred$labels[match(rownames(obj@meta.data), rownames(pred))]
+DimPlot(obj, reduction = "umap", group.by = "singleR.labels", pt.size = 4)
+
+# For annotating cells with reference it is not necessary for filtering low expression of genes or cells and annotating base on Integrated.5 of the reference
+pbmc_counts = GetAssayData(obj, slot = "count")
+logcounts(cortex_sc) = assay(cortex_sc, "X")
+library(SingleR)
+pred_1 = SingleR(test = pbmc_counts, ref = cortex_sc, labels=cortex_sc$Integrated_05)
+obj$singleR.labels_1 = pred_1$labels[match(rownames(obj@meta.data), rownames(pred))]
+DimPlot(obj, reduction = "umap", group.by = "singleR.labels_1", pt.size = 4)
+
+# Annotation diagnostics
+
+# based on the scores within cells
+pred
+pred$scores
+plotScoreHeatmap(pred)
+plotScoreHeatmap(pred_1)
+
+# based on deltas across cells
+plotDeltaDistribution(pred)
+plotDeltaDistribution(pred_1)
+
+# Comparing unsupervised clustering
+tab = table(Assigned = pred$labels, Clusters = obj$seurat_clusters)
+tab_1 = table(Assigned = pred_1$labels, Clusters = obj$seurat_clusters)
+
+# clustering cell annotation and seurat clusters
+DimPlot(obj, reduction = "umap", group.by = "singleR.labels_1", label = T, pt.size = 2, label.size = 6) + DimPlot(obj, reduction = "umap", group.by = "seurat_clusters", label = T, pt.size = 2, label.size = 6)
+
+
+# monocles workflow
+# monocles 3 required cell_data_set object
+# conver seurat object to cel_data_set object for monocle3
+
+cds = as.cell_data_set(obj)
