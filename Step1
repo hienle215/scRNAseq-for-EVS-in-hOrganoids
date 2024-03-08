@@ -124,5 +124,5 @@ DimPlot(obj, reduction = "umap", group.by = "singleR.labels_1", label = T, pt.si
 
 cds = as.cell_data_set(obj)
 
-# to get cell metadata
+# to get cell metadata (not yet success because can not install monocol3 library) 
 cds
