@@ -9,6 +9,8 @@ library(Seurat)
 library(glmGamPoi)
 cortex_sc = readRDS(glue::glue("C:\\Users\\leh\\OneDrive - TUNI.fi\\Documents\\Data\\cap_3\\outs\\reference_gut\\Full_obj_log_counts_soupx_v2_DUOdata.RDS"))
 logcounts(cortex_sc) = assay(cortex_sc, "X")
+names(assays(cortex_sc))=c("counts","logcounts")
+
 ### For loading h5 file
 library(Seurat)
 library(SeuratDisk)
@@ -27,11 +29,18 @@ obj2 = CreateSeuratObject(counts = sample2)
 obj3 = CreateSeuratObject(counts = sample3)
 obj4 = CreateSeuratObject(counts = sample4)
 
-obj = merge(obj1, y = c(obj2, obj3, obj4) , add.cell.ids = c("non_EVs", "non_EVS", "EVs", "EVs"), project = "scRNA-Intestinal organoids")
+obj = merge(obj1, y = c(obj2, obj3, obj4), add.cell.ids = c("non_EVs", "non_EVS", "EVs", "EVs"), project = "scRNA-Intestinal organoids")
+VariableFeatures(obj) <- c(VariableFeatures(obj1), VariableFeatures(obj2),VariableFeatures(obj3),VariableFeatures(obj4))
+DefaultAssay(obj) = "RNA"
+
+# % MT seurat
+obj[["percent.mt"]] = PercentageFeatureSet(obj, pattern = "^MT-")
+View(obj@meta.data)
+VlnPlot(obj, features = c("nFeature_RNA", "nCount_RNA", "percent.mt"), ncol = 3)
+library(ggplot2)
+FeatureScatter(obj, feature1 = "nCount_RNA", feature2 = "nFeature_RNA") + geom_smooth(method = "lm")
 
 # Working on single cell data for pseudobulk
-library(SingleR)
-obj = CreateSeuratObject(counts = sample1)
 obj = NormalizeData(obj)
 obj = FindVariableFeatures(obj)
 obj = ScaleData(obj)
@@ -39,9 +48,10 @@ obj = RunPCA(obj)
 obj = FindNeighbors(obj, dims = 1:30, reduction = "pca")
 obj = FindClusters(obj, verbose = FALSE)
 obj = RunUMAP(obj, dims = 1:30)
+
+tab <- table(Assigned=pred$pruned.labels, Cluster=colLabels(data_sce))
+
 pbmc_counts = GetAssayData(obj, slot = "count")
-logcounts(cortex_sc) = assay(cortex_sc, "X")
-library(SingleR)
 
 # modify on 8.3.2024
 counts = obj@assays$RNA@layers$counts
@@ -69,4 +79,18 @@ library(png)
 library(DESeq2)
 library(RColorBrewer)
 library(data.table)
+
+### 11.03.2024 coding for cell annotation (it does not work until now)
+anchors = FindTransferAnchors(reference = reference_SCT, query = obj, normalization.method = "SCT")
+predictions = TransferData(anchorset = anchors, refdata = reference_SCT$Integrated_05, dims = 1:30)
+obj_seu = AddMetaData(obj_seu, metadata = predictions)
+obj_seu$prediction.match <- obj_seu$predicted.id == obj_seu$celltype
+
+### 12.3.2024 try single cell packages (not yet test in R)
+cortex_sc
+data_sce = as.SingleCellExperiment(obj)
+names(assays(cortex_sc)) = c("count", "logcounts")
+library(SingleR)
+pred = Singler(test = data_sce, ref=cortex_sc, lables = cortex_sc$Integrated_05)
+
 
