@@ -1,0 +1,92 @@
+### Merge two samples in one group for cell and gene annotation based on GUT reference
+library(Seurat)
+library(dplyr)
+library(SummarizedExperiment)
+library(SingleCellExperiment)
+library(glmGamPoi)
+library(SeuratDisk)
+library(SeuratData)
+library(hdf5r)
+library(ggplot2)
+library(SingleR)
+
+# Loading GUT reference
+cortex_sc = readRDS(glue::glue("C:\\Users\\leh\\OneDrive - TUNI.fi\\Documents\\Data\\cap_3\\outs\\reference_gut\\Full_obj_log_counts_soupx_v2_DUOdata.RDS"))
+logcounts(cortex_sc) = assay(cortex_sc, "X")
+reference = as.Seurat(cortex_sc, "X")
+reference_SCT <- Seurat::SCTransform(reference, assay = NULL) %>%
+  Seurat::RunPCA(., verbose = FALSE) %>%
+  Seurat::RunUMAP(., dims = 1:30, verbose = FALSE)
+
+### uninfected samples
+
+sample1 = Read10X_h5(filename = "C://Users//leh//OneDrive - TUNI.fi//Documents//Data//scRNA_2024//sample1//filtered_feature_bc_matrix.h5") 
+sample2 = Read10X_h5(filename = "C://Users//leh//OneDrive - TUNI.fi//Documents//Data//scRNA_2024//sample2//filtered_feature_bc_matrix.h5") 
+merge_non_EV = cbind(sample1, sample2) # merge 2 single cell objects
+
+merge_seu_nonEV = CreateSeuratObject(merge_non_EV)
+merge_seu_nonEV[["percent.mt"]] = PercentageFeatureSet(merge_seu_nonEV, pattern = "^MT-")
+View(merge_seu_nonEV@meta.data)
+VlnPlot(merge_seu_nonEV, features = c("nFeature_RNA", "nCount_RNA", "percent.mt"), ncol = 3)
+FeatureScatter(merge_seu_nonEV, feature1 = "nCount_RNA", feature2 = "nFeature_RNA") + geom_smooth(method = "lm")
+
+merge_seu_nonEV = subset(merge_seu_nonEV, subset = nFeature_RNA > 200 & nFeature_RNA < 4000 & percent.mt < 15) # for removing genes/cells far from the line
+
+merge_seu_nonEV = NormalizeData(merge_seu_nonEV)
+merge_seu_nonEV = FindVariableFeatures(merge_seu_nonEV)
+merge_seu_nonEV = ScaleData(merge_seu_nonEV)
+merge_seu_nonEV = RunPCA(merge_seu_nonEV)
+merge_seu_nonEV = FindNeighbors(merge_seu_nonEV, dims = 1:30, reduction = "pca")
+merge_seu_nonEV = FindClusters(merge_seu_nonEV, verbose = FALSE)
+merge_seu_nonEV = RunUMAP(merge_seu_nonEV,, dims = 1:30)
+pbmc_counts = GetAssayData(merge_seu_nonEV, slot = "count")
+logcounts(cortex_sc) = assay(cortex_sc, "X")
+
+pred_01 = SingleR(test = pbmc_counts, ref = cortex_sc, labels=cortex_sc$Integrated_05)
+merge_seu_nonEV$singleR.labels = pred_01$labels[match(rownames(merge_seu_nonEV@meta.data), rownames(pred_01))]
+DimPlot(merge_seu_nonEV, reduction = "umap", group.by = "singleR.labels", pt.size = 2, label = T, label.size = 5)
+
+### infected samples
+
+sample3 = Read10X_h5(filename = "C://Users//leh//OneDrive - TUNI.fi//Documents//Data//scRNA_2024//sample3//filtered_feature_bc_matrix.h5") 
+sample4 = Read10X_h5(filename = "C://Users//leh//OneDrive - TUNI.fi//Documents//Data//scRNA_2024//sample4//filtered_feature_bc_matrix.h5") 
+merge_EV = cbind(sample3, sample4)
+
+merge_seu_EV = CreateSeuratObject(merge_EV)
+merge_seu_EV[["percent.mt"]] = PercentageFeatureSet(merge_seu_EV, pattern = "^MT-")
+View(merge_seu_EV@meta.data)
+VlnPlot(merge_seu_EV, features = c("nFeature_RNA", "nCount_RNA", "percent.mt"), ncol = 3)
+FeatureScatter(merge_seu_EV, feature1 = "nCount_RNA", feature2 = "nFeature_RNA") + geom_smooth(method = "lm")
+
+merge_seu_EV= subset(merge_seu_EV, subset = nFeature_RNA > 200 & nFeature_RNA < 4000 & percent.mt < 15) # for removing genes/cells far from the line
+
+merge_seu_EV = NormalizeData(merge_seu_EV)
+merge_seu_EV = FindVariableFeatures(merge_seu_EV)
+merge_seu_EV = ScaleData(merge_seu_EV)
+merge_seu_EV = RunPCA(merge_seu_EV)
+merge_seu_EV = FindNeighbors(merge_seu_EV, dims = 1:30, reduction = "pca")
+merge_seu_EV = FindClusters(merge_seu_EV, verbose = FALSE)
+merge_seu_EV = RunUMAP(merge_seu_EV,, dims = 1:30)
+pbmc_counts_EV = GetAssayData(merge_seu_EV, slot = "count")
+logcounts(cortex_sc) = assay(cortex_sc, "X")
+
+pred = SingleR(test = pbmc_counts_EV, ref = cortex_sc, labels=cortex_sc$Integrated_05)
+merge_seu_EV$singleR.labels = pred$labels[match(rownames(merge_seu_EV@meta.data), rownames(pred))]
+DimPlot(merge_seu_EV, reduction = "umap", group.by = "singleR.labels",  pt.size = 2, label = T, label.size = 5)
+
+### Detecting some genes based on cell lines
+DimPlot(merge_seu_nonEV, reduction = "umap", group.by = "singleR.labels", label = T, pt.size = 2, label.size = 6) + DimPlot(merge_seu_nonEV, reduction = "umap", group.by = "seurat_clusters", label = T, pt.size = 2, label.size = 6)
+DimPlot(merge_seu_EV, reduction = "umap", group.by = "singleR.labels", label = T, pt.size = 2, label.size = 6) + DimPlot(merge_seu_EV, reduction = "umap", group.by = "seurat_clusters", label = T, pt.size = 2, label.size = 6)
+
+VlnPlot(merge_seu_nonEV, c("TGM2"), group.by = "singleR.labels")
+VlnPlot(merge_seu_EV, c("TGM2"), group.by = "singleR.labels")
+VlnPlot(merge_seu_nonEV, c("TGM2"), group.by = c("Enteocyte", "Stem cells", "Paneth", "Microfold cell", "Tuft", "Goblet cell", "TA", "BEST4+ epithelial"))
+VlnPlot(merge_seu_EV, c("TGM2"), group.by = c("Enteocyte", "Stem cells", "Paneth", "Microfold cell", "Tuft", "Goblet cell", "TA", "BEST4+ epithelial"))
+
+
+FeaturePlot(merge_seu_nonEV, features = "TGM2", label = T, label.size = 5, pt.size = 3)
+FeaturePlot(merge_seu_EV, features = "TGM2", label = T, label.size = 8, pt.size = 3)
+DotPlot(merge_seu_nonEV, features = "TGM2") + RotatedAxis() + DotPlot(merge_seu_EV, features = "TGM2") + RotatedAxis()
+feature = c("TGM2", "IFIT3", "SAMD9", "MX1") 
+DoHeatmap(subset(merge_seu_nonEV, downsample = 100), features = feature , size = 3) + DoHeatmap(subset(merge_seu_EV, downsample = 100), features = feature, size = 3) 
+DoHeatmap(subset(merge_seu_nonEV, downsample = 100), features = feature , size = 3) + scale_fill_gradientn(colors = c("blue", "white", "red")) + DoHeatmap(subset(merge_seu_EV, downsample = 100), features = feature , size = 3) + scale_fill_gradientn(colors = c("blue", "white", "red"))
