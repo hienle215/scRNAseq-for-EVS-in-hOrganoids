@@ -1,0 +1,118 @@
+#--------------------------------------------------------------------loading samples------------------------------------------------------------
+library(Seurat)
+library(hdf5r) #devtools::install_github("hhoeflin/hdf5r")
+library(readxl)
+library(dplyr)
+library(scclusteval) #devtools::install_github("crazyhottommy/scclusteval")
+library(ggpubr)
+
+setwd("C:/Users/leh/OneDrive - TUNI.fi/Documents/Data/scRNA_2024/images_R_29052024_coding")
+
+#setwd("~/Documents/reovirus")
+CVB.1 <- Read10X_h5("C://Users//leh//OneDrive - TUNI.fi//Documents//Data//scRNA_2024//sample1_50Mdepth//outs//filtered_feature_bc_matrix.h5")
+Ctrl.1 <- Read10X_h5("C://Users//leh//OneDrive - TUNI.fi//Documents//Data//scRNA_2024//sample2_50Mdepth//outs//filtered_feature_bc_matrix.h5")
+CVB.2 <- Read10X_h5("C://Users//leh//OneDrive - TUNI.fi//Documents//Data//scRNA_2024//sample3_50Mdepth//outs//filtered_feature_bc_matrix.h5")
+Ctrl.2 <-  Read10X_h5("C://Users//leh//OneDrive - TUNI.fi//Documents//Data//scRNA_2024//sample4_50Mdepth//outs//filtered_feature_bc_matrix.h5")
+
+celseq1 <- CreateSeuratObject(counts = CVB.1, project = "CVB1")
+celseq2 <- CreateSeuratObject(counts = Ctrl.1, project = "Ctrl1")
+celseq3 <- CreateSeuratObject(counts = CVB.2, project = "CVB2")
+celseq4 <- CreateSeuratObject(counts = Ctrl.2, project = "Ctrl2")
+
+ileum_infection_sc <- merge(celseq1, y = c(celseq2, celseq3,celseq4), 
+                            add.cell.ids = c("CVB1", "Ctrl1", "CVB2","Ctrl2"), project = "organoids_infection_sc")
+
+dim(ileum_infection_sc) #[1] 36601 4144
+ileum_infection_sc = JoinLayers(ileum_infection_sc)
+counts_per_cell <- Matrix::colSums(ileum_infection_sc@assays$RNA@layers$counts) # length 4144
+counts_per_gene <- Matrix::rowSums(ileum_infection_sc@assays$RNA@layers$counts)
+a <- counts_per_cell[counts_per_cell > 1] # 4144
+b <- counts_per_gene[counts_per_gene > 3] #25882
+
+filtered_matrix <- ileum_infection_sc@assays$RNA@counts[names(b),names(a)]# not work
+counts <- GetAssayData(ileum_infection_sc, slot = "counts")
+rownames(counts)[1:5]  # should now show gene names
+colnames(counts)[1:5]  # should show cell barcodes
+counts_per_cell <- Matrix::colSums(counts)
+counts_per_gene <- Matrix::rowSums(counts)
+a <- counts_per_cell[counts_per_cell > 1000] # 3081
+b <- counts_per_gene[counts_per_gene > 3] #20000
+genes_to_keep <- intersect(rownames(counts), names(b))
+cells_to_keep <- intersect(colnames(counts), names(a))
+
+# Subset using matrix-style indexing
+filtered_matrix <- counts[genes_to_keep, cells_to_keep]
+
+filtered_matrix <- counts[names(b), names(a)]
+dim(filtered_matrix) #[1] 29535 24747 
+ileum_infection_sc <- CreateSeuratObject(counts = filtered_matrix)
+head(ileum_infection_sc@meta.data)
+dim(ileum_infection_sc)
+
+#----------------------------supplement data 1------------------------------------------------------------------------------
+#----------------------------quality control--------------------------------------------------------------------------------
+library(readxl)
+library(dplyr)
+library(numform)
+library(ggpubr)
+library(caTools)
+library(randomForest)
+library(readxl)
+library(stringr)
+library(caret)
+library(gridExtra)
+library(cowplot)
+
+mytheme <- theme_classic(base_family='sans') + theme(axis.text.x = element_text(size=6, color = "black"),
+                                                     axis.text.y= element_text(size=6, color = "black"),
+                                                     axis.title.y = element_text(size=8, color = "black"),
+                                                     axis.title.x = element_text(size=8, color = "black"),
+                                                     legend.text = element_text( size = 4, color = "black"),
+                                                     legend.key.size = unit(2, 'mm'),
+                                                     legend.position = "top",
+                                                     legend.title = element_blank(),
+                                                     plot.title = element_text(hjust = 0.5, size = 8,face = "bold"),
+                                                     axis.line = element_line(colour = "black", linewidth=1/.pt),
+                                                     strip.text.x = element_text(size = 6),
+                                                     strip.text.y = element_text(size = 6),
+                                                     panel.background = element_rect(fill = 'White'),
+                                                     panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+                                                     axis.title.x.top = element_text(color='#4daf4a',size=7), 
+                                                     axis.text.x.top = element_text(color='#4daf4a',size=6))
+palette <- c(GFDd = "#00b347", GFDp = "#005923",PGCd = "#6500ff", PGCp = "#ff6500")
+
+#-----------------------------------------------------Supplement 1 A------------------------------------------------------------------------------------------------------------
+ileum_infection_sc[["percent.mito"]] = PercentageFeatureSet(ileum_infection_sc, pattern = "^MT-")
+qc <- VlnPlot(object = ileum_infection_sc, features =c('nCount_RNA',"nFeature_RNA","percent.mito"))
+
+
+#----------------------------------------------------Supplement 1 B------------------------------------------------------------------------------------------------------------
+#----------------------------------------------------Cleaning data for further analysis----------------------------------------------------------------------------------------
+ileum_infection_sc <- subset(ileum_infection_sc, subset = percent.mito < 15)
+ileum_infection_sc <- subset(ileum_infection_sc, subset = nCount_RNA >= 500)
+ileum_infection_sc <- subset(ileum_infection_sc, subset = nFeature_RNA <= 5000)
+ileum_infection_sc <- subset(ileum_infection_sc, subset = nCount_RNA < 30000)
+ileum_infection_sc <- subset(ileum_infection_sc, subset = nFeature_RNA >= 200)
+dim(ileum_infection_sc) # 20296 2757
+qc_after <- VlnPlot(object = ileum_infection_sc, features =c('nCount_RNA',"nFeature_RNA","percent.mito"))
+
+###-------------------------------------------------merging images---------------------------------------------------------------------------------------------------------------
+filler <- ggplot()
+library(gridExtra)
+library(ggplot2)
+
+figure_qc <- ggarrange(
+  qc, qc_after,
+  ncol = 1,
+  labels = c("A", "B"),
+  font.label = list(size = 16, face = "bold"),
+  align = "v"
+)
+
+
+ggexport(figure_qc,filename = "supplement_1.tiff",
+         width = 1800, # 7 inch max width 2100
+         height = 1700, 
+         res = 300) # Figure panels should be prepared at a minimum resolution of 300 dpi and saved at a maximum width of 180 mm (7,08661 inch).  
+
+
