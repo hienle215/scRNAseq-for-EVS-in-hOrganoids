@@ -1,0 +1,276 @@
+###-------------------------Figure3--------------------------------------------------------------------------------------------------------------------------------------------
+### ------------------------------------------Figure 3 A volcano plot---------------------------------------------------------------------------------------------------------
+test1 = test
+orig.ident <- as.vector(test1$old.ident)
+orig.ident <- replace(orig.ident, orig.ident == "Ctrl1", "Ctrl")
+orig.ident <- replace(orig.ident, orig.ident == "Ctrl2", "Ctrl")
+
+orig.ident <- replace(orig.ident, orig.ident == "CVB1", "CVB")
+orig.ident <- replace(orig.ident, orig.ident == "CVB2", "CVB")
+
+test1$orig.ident <- NULL
+test1 <- AddMetaData(
+  object = test,
+  metadata = orig.ident,
+  col.name = 'study.rep'
+)
+
+table(test1$study.rep)
+Idents(test1) <- "study.rep"
+deg <- FindMarkers(test1, ident.1 = "CVB", ident.2 = "Ctrl", 
+                   logfc.threshold = 0, min.pct = 0.1, test.use = "wilcox")
+
+# Add gene column for plotting
+deg$gene <- rownames(deg)
+# Define significance thresholds
+deg$significance <- "Not Significant"
+deg$significance[deg$p_val_adj < 0.05 & abs(deg$avg_log2FC) > 0.5] <- "Significant"
+library(ggplot2)
+library(ggrepel)
+
+###-------------------------------------------------------------Figure 3C----------------------------------------------------------------------------------
+###----------------------------IFN alpha enrichment---------------------------------------------------------------------------------------------------------------
+deg
+library(fgsea)
+library(msigdbr)
+library(dplyr)
+
+head(deg)
+m_df <- msigdbr(
+  species  = "Homo sapiens",
+  category = "H"
+)
+pathways <- split(m_df$gene_symbol, m_df$gs_name)
+
+ranks <- deg$avg_log2FC
+names(ranks) <- deg$gene
+# remove NA + duplicates
+ranks <- ranks[!is.na(ranks)]
+ranks <- ranks[!duplicated(names(ranks))]
+# rank genes
+ranks <- sort(ranks, decreasing = TRUE)
+
+fg <- fgsea(
+  pathways = pathways,
+  stats    = ranks,
+  minSize  = 10,
+  maxSize  = 500
+)
+
+fg <- fg[order(fg$padj), ]
+head(fg, 10)
+top_pathway <- fg$pathway[1]
+
+plotEnrichment(
+  pathways[[top_pathway]],
+  ranks
+) +
+  ggtitle(top_pathway)
+
+top_pathway <- "HALLMARK_INTERFERON_ALPHA_RESPONSE"  # explicitly set IFN-γ
+ifn_genes <- pathways[[top_pathway]]  # genes in IFN-γ pathway
+
+# Extract stats
+nes_val <- round(fg$NES[fg$pathway == top_pathway], 2)
+padj_val <- signif(fg$padj[fg$pathway == top_pathway], 3)
+
+# 1. Enrichment curve with thicker green line
+p1 <- plotEnrichment(ifn_genes, ranks) +
+  ggtitle(paste0("Enrichment plot: ", top_pathway)) +
+  labs(
+    subtitle = paste0("NES = ", nes_val, ", FDR = ", padj_val),
+    x = NULL,
+    y = "Enrichment Score (ES)"
+  ) +
+  theme_bw(base_size = 14) +
+  theme(
+    plot.title = element_text(hjust = 0.5, face = "bold", size = 16),
+    plot.subtitle = element_text(hjust = 0.5, size = 12),
+    axis.text = element_text(color = "black"),
+    axis.title = element_text(face = "bold"),
+    legend.position = "none"
+  )
+# 2. Ranking metric scores bar plot (bottom panel) with IFN-γ genes highlighted
+df_ranks <- data.frame(
+  gene = names(ranks),
+  rank = seq_along(ranks),
+  score = ranks,
+  category = ifelse(names(ranks) %in% ifn_genes, "IFN-γ",
+                    ifelse(ranks > 0, "Up", "Down"))
+)
+
+p2 <- ggplot(df_ranks, aes(x = rank, y = score, fill = category)) +
+  geom_bar(stat = "identity") +
+  scale_fill_manual(values = c("Up" = "red", "Down" = "blue", "IFN-γ" = "green")) +
+  theme_bw(base_size = 12) +
+  labs(x = "Rank in Ordered Dataset", y = "Ranking metric scores", fill = "Gene Category") +
+  theme(
+    axis.text = element_text(color = "black"),
+    axis.title = element_text(face = "bold")
+  )
+
+# Combine enrichment curve (top) and barplot (bottom) 
+combined_plot = p1 / p2 + plot_layout(heights = c(2, 1))
+ggexport(combined_plot,
+         filename = "IFNalpha_enrichment_plot.tiff",
+         width = 2500,    # in pixels
+         height = 2000,   # in pixels
+         res = 300)   
+###-------------------------------------------------------------Figure 3 supllement----------------------------------------------------------------------------------
+###----------------------------IL6-JAK-STAT3---------------------------------------------------------------------------------------------------------------
+
+top_pathway <- "HALLMARK_IL6_JAK_STAT3_SIGNALING"  
+JAK_genes <- pathways[[top_pathway]]  
+
+# Extract stats
+nes_val <- round(fg$NES[fg$pathway == top_pathway], 2)
+padj_val <- signif(fg$padj[fg$pathway == top_pathway], 3)
+
+# 1. Enrichment curve with thicker green line
+p1 <- plotEnrichment(JAK_genes, ranks) +
+  ggtitle(paste0("Enrichment plot: ", top_pathway)) +
+  labs(
+    subtitle = paste0("NES = ", nes_val, ", FDR = ", padj_val),
+    x = NULL,
+    y = "Enrichment Score (ES)"
+  ) +
+  theme_bw(base_size = 14) +
+  theme(
+    plot.title = element_text(hjust = 0.5, face = "bold", size = 16),
+    plot.subtitle = element_text(hjust = 0.5, size = 12),
+    axis.text = element_text(color = "black"),
+    axis.title = element_text(face = "bold"),
+    legend.position = "none"
+  )
+# 2. Ranking metric scores bar plot (bottom panel) with IFN-γ genes highlighted
+df_ranks <- data.frame(
+  gene = names(ranks),
+  rank = seq_along(ranks),
+  score = ranks,
+  category = ifelse(names(ranks) %in% JAK_genes, "IL6/JAK/STAT3",
+                    ifelse(ranks > 0, "Up", "Down"))
+)
+
+p2 <- ggplot(df_ranks, aes(x = rank, y = score, fill = category)) +
+  geom_bar(stat = "identity") +
+  scale_fill_manual(values = c("Up" = "red", "Down" = "blue", "IFN-γ" = "green")) +
+  theme_bw(base_size = 12) +
+  labs(x = "Rank in Ordered Dataset", y = "Ranking metric scores", fill = "Gene Category") +
+  theme(
+    axis.text = element_text(color = "black"),
+    axis.title = element_text(face = "bold")
+  )
+
+# Combine enrichment curve (top) and barplot (bottom) 
+combined_plot = p1 / p2 + plot_layout(heights = c(2, 1))
+ggexport(combined_plot,
+         filename = "IL6_JAK_STAT3_enrichment_plot.tiff",
+         width = 2500,    # in pixels
+         height = 2000,   # in pixels
+         res = 300)  
+
+###-------------------------------------------------------------Figure 3 supllement----------------------------------------------------------------------------------
+###----------------------------MYC-CDX2 signaling---------------------------------------------------------------------------------------------------------------
+
+top_pathway <- "HALLMARK_MYC_TARGETS_V1"  
+MYC_genes <- pathways[[top_pathway]]  
+
+# Extract stats
+nes_val <- round(fg$NES[fg$pathway == top_pathway], 2)
+padj_val <- signif(fg$padj[fg$pathway == top_pathway], 3)
+
+# 1. Enrichment curve with thicker green line
+p1 <- plotEnrichment(MYC_genes, ranks) +
+  ggtitle(paste0("Enrichment plot: ", top_pathway)) +
+  labs(
+    subtitle = paste0("NES = ", nes_val, ", FDR = ", padj_val),
+    x = NULL,
+    y = "Enrichment Score (ES)"
+  ) +
+  theme_bw(base_size = 14) +
+  theme(
+    plot.title = element_text(hjust = 0.5, face = "bold", size = 16),
+    plot.subtitle = element_text(hjust = 0.5, size = 12),
+    axis.text = element_text(color = "black"),
+    axis.title = element_text(face = "bold"),
+    legend.position = "none"
+  )
+# 2. Ranking metric scores bar plot (bottom panel) with IFN-γ genes highlighted
+df_ranks <- data.frame(
+  gene = names(ranks),
+  rank = seq_along(ranks),
+  score = ranks,
+  category = ifelse(names(ranks) %in% MYC_genes, "MYC",
+                    ifelse(ranks > 0, "Up", "Down"))
+)
+
+p2 <- ggplot(df_ranks, aes(x = rank, y = score, fill = category)) +
+  geom_bar(stat = "identity") +
+  scale_fill_manual(values = c("Up" = "red", "Down" = "blue", "IFN-γ" = "green")) +
+  theme_bw(base_size = 12) +
+  labs(x = "Rank in Ordered Dataset", y = "Ranking metric scores", fill = "Gene Category") +
+  theme(
+    axis.text = element_text(color = "black"),
+    axis.title = element_text(face = "bold")
+  )
+
+# Combine enrichment curve (top) and barplot (bottom) 
+combined_plot = p1 / p2 + plot_layout(heights = c(2, 1))
+ggexport(combined_plot,
+         filename = "MYC_enrichment_plot.tiff",
+         width = 2500,    # in pixels
+         height = 2000,   # in pixels
+         res = 300) 
+###-------------------------------------------------------------Figure 3 supllement----------------------------------------------------------------------------------
+###----------------------------epithelial mesenchymal ---------------------------------------------------------------------------------------------------------------
+
+top_pathway <- "HALLMARK_EPITHELIAL_MESENCHYMAL_TRANSITION"  
+mes_genes <- pathways[[top_pathway]]  
+
+# Extract stats
+nes_val <- round(fg$NES[fg$pathway == top_pathway], 2)
+padj_val <- signif(fg$padj[fg$pathway == top_pathway], 3)
+
+# 1. Enrichment curve with thicker green line
+p1 <- plotEnrichment(mes_genes, ranks) +
+  ggtitle(paste0("Enrichment plot: ", top_pathway)) +
+  labs(
+    subtitle = paste0("NES = ", nes_val, ", FDR = ", padj_val),
+    x = NULL,
+    y = "Enrichment Score (ES)"
+  ) +
+  theme_bw(base_size = 14) +
+  theme(
+    plot.title = element_text(hjust = 0.5, face = "bold", size = 16),
+    plot.subtitle = element_text(hjust = 0.5, size = 12),
+    axis.text = element_text(color = "black"),
+    axis.title = element_text(face = "bold"),
+    legend.position = "none"
+  )
+# 2. Ranking metric scores bar plot (bottom panel) with IFN-γ genes highlighted
+df_ranks <- data.frame(
+  gene = names(ranks),
+  rank = seq_along(ranks),
+  score = ranks,
+  category = ifelse(names(ranks) %in% mes_genes, "Transition",
+                    ifelse(ranks > 0, "Up", "Down"))
+)
+
+p2 <- ggplot(df_ranks, aes(x = rank, y = score, fill = category)) +
+  geom_bar(stat = "identity") +
+  scale_fill_manual(values = c("Up" = "red", "Down" = "blue", "IFN-γ" = "green")) +
+  theme_bw(base_size = 12) +
+  labs(x = "Rank in Ordered Dataset", y = "Ranking metric scores", fill = "Gene Category") +
+  theme(
+    axis.text = element_text(color = "black"),
+    axis.title = element_text(face = "bold")
+  )
+
+# Combine enrichment curve (top) and barplot (bottom) 
+combined_plot = p1 / p2 + plot_layout(heights = c(2, 1))
+combined_plot
+ggexport(combined_plot,
+         filename = "EMT_enrichment_plot.tiff",
+         width = 2500,    # in pixels
+         height = 2000,   # in pixels
+         res = 300) 
