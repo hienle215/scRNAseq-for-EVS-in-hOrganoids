@@ -1,0 +1,361 @@
+###----------------------------------------------------------------------Figure 2-------------------------------------------------------------------------------------------------
+###----------------------------------------------------------------------Figure 2 A cell clusters---------------------------------------------------------------------------------
+ileum_infection_sc = JoinLayers(ileum_infection_sc)
+counts_per_gene <- Matrix::rowSums(ileum_infection_sc@assays$RNA@layers$counts) #36601
+b <- counts_per_gene[counts_per_gene > 3] #18652
+
+
+#Normalize data
+ileum_infection_sc <- NormalizeData(ileum_infection_sc, normalization.method = "LogNormalize", scale.factor = 1e3)
+ileum_infection_sc <- FindVariableFeatures(ileum_infection_sc)
+plot1 <- VariableFeaturePlot(ileum_infection_sc)
+
+#Cell cycle
+s_genes = c("MCM4", "EXO1", "SLBP", "GMNN", "CDC45", "MCM6", "RRM2", "POLD3", "BLM", "UBR7", "MCM5", "CLSPN", "HELLS", "RPA2", "TYMS", "RRM1", "RFC2", "PRIM1", "BRIP1", "USP1", "UNG", "POLA1", "MCM2", "FEN1","TIPIN", "PCNA", "CDCA7", "UHRF1", "CASP8AP2", "CDC6", "DSCC1")
+g2m_genes = c("NUF2", "PSRC1", "NCAPD2", "CCNB2", "SMC4", "LBR", "TACC3", "CENPA", "KIF23", "CDCA2", "ANP32E", "G2E3", "CDCA3", "ANLN", "CENPE", "GAS2L3","TUBB4B", "CENPF", "DLGAP5", "HJURP", "GTSE1", "BUB1", "BIRC5", "UBE2C", "RANGAP1", "HMMR", "ECT2", "TPX2", "CKAP5", "CBX5", "NEK2", "TTK", "CDCA8", "NUSAP1", "CTCF", "CDC20", "CKS2", "TMPO", "CKAP2L", "CDK1", "TOP2A","AURKA", "CKAP2", "HMGB2", "CDC25C", "NDC80", "KIF11")#1
+ileum_infection_sc <- CellCycleScoring(ileum_infection_sc, s.features = s_genes, g2m.features = g2m_genes, set.ident = TRUE)
+all.genes <- rownames(ileum_infection_sc)
+ileum_infection_sc <- ScaleData(ileum_infection_sc,vars.to.regress = c("nCount_RNA", "percent.mito", "S.Score", "G2M.Score"), features = all.genes)
+#ileum_infection_sc <- ScaleData(ileum_infection_sc, features = all.genes)
+
+ileum_infection_sc <- RunPCA(ileum_infection_sc, features = VariableFeatures(object = ileum_infection_sc))
+ileum_infection_sc <- FindNeighbors(ileum_infection_sc, dims = 1:30)
+ileum_infection_sc <- RunUMAP(ileum_infection_sc, dims = 1:30)
+# note that you can set `label = TRUE` or use the LabelClusters function to help label  individual clusters
+DimPlot(ileum_infection_sc, reduction = "umap", group.by = "orig.ident", label = TRUE, pt.size = 2)
+test = ileum_infection_sc
+test = FindClusters(test, resolution = 0.45)
+dimplot_res04 = DimPlot(test, reduction = "umap", group.by = "RNA_snn_res.0.45", pt.size = 2, label = T, label.size = 8, split.by ="orig.ident")
+
+seurat.markers.04 <- FindAllMarkers(test,  group.by = "RNA_snn_res.0.45", test.use = "wilcox", logfc.threshold = 0.25)
+
+markers.04 = seurat.markers.04 %>%
+  group_by(cluster) %>%
+  slice_max(n = 15, order_by = avg_log2FC)
+
+immature_enterocyte_markers <- c(
+  "ANXA10",    # Annexin A10
+  "FABP1",     # Fatty acid-binding protein 1
+  "CDX2",      # Transcription factor for enterocyte identity
+  "KRT20",     # Cytoskeletal marker, low to moderate in immature cells
+  "SLC26A3",   # Early ion transporter
+  "MGAM",      # Brush border enzyme (less than in mature enterocytes)
+  "TFF2",      # Trefoil factor involved in mucosal repair/differentiation
+  "ALCAM"      # Stem marker – decreases in immature enterocytes
+)
+FeaturePlot(test, features = immature_enterocyte_markers, cols = c("lightgrey", "blue"), ncol = 3, order = T, pt.size = 1.5 )
+
+### label the cluster name
+new.cluster.ids <- c("Immature enterocytes",
+                     "Immature goblets",
+                     "Goblets",
+                     "Enterocytes",
+                     "Undifferentiated cells",
+                     "Stem/TA cells"
+)
+
+test2 = test
+names(new.cluster.ids) <- levels(test2)
+test2 <- RenameIdents(test2, new.cluster.ids)
+UMAP <- DimPlot(test2, reduction = "umap", label = TRUE, pt.size = 1.5, label.size = 5) 
+
+#----------------------------------FeaturePlot---------------------------------------------------------------------------------
+#----------------------------------Figure 2B-----------------------------------------------------------------------------------
+test1 = test
+orig.ident <- as.vector(test1$old.ident)
+orig.ident <- replace(orig.ident, orig.ident == "Ctrl1", "CVB")
+orig.ident <- replace(orig.ident, orig.ident == "Ctrl2", "Ctrl")
+
+orig.ident <- replace(orig.ident, orig.ident == "CVB1", "CVB")
+orig.ident <- replace(orig.ident, orig.ident == "CVB2", "Ctrl")
+
+test1$orig.ident <- NULL
+test1 <- AddMetaData(
+  object = test,
+  metadata = orig.ident,
+  col.name = 'study.rep'
+)
+features = c("PCSK5", "PBX1", "XYLT1", "MUC1","AGR2", "TFF3",  "GBP4", "MUC5AC","MUC4", "MUC2", "VIM", "WNT7A", "CLCA1", "CLCA3", "APOA1", "APOA4", "ALPI", "RBP2", "OLFM4", "ALCAM","EGR4", "SMOC2", "EGFL6")
+
+dotplot = DotPlot(test2, features = features , dot.scale =14, col.min = 0, col.max = 0.4, cols =c("lightgreen", "red")) +
+  theme(axis.text.x = element_text(angle = 90)) +
+  theme(title = element_text(size = 10, face = "bold"),
+        axis.title.x = element_text(size = 10),
+        axis.text.x = element_text(size = 10), 
+        axis.text.y = element_text(size = 10),  
+        axis.title.y = element_text(size = 10)) + 
+  theme(legend.text = element_text(size = 10),legend.key.height= unit(0.5, 'cm'), legend.key.width= unit(0.5, 'cm'))
+dotplot = DotPlot(test2, features = features , dot.scale =14, col.min = 0, col.max = 0.4, cols =c("lightgreen", "red")) +
+  theme(axis.text.x = element_text(angle = 90))
+
+#-----------------------------------------------------------heatmap for visualization----------------------------------------------------------------
+#-----------------------------------------------------------supplement data F2A----------------------------------------------------------------------------------
+test_heatmap = test2
+features <- c(
+  "PCSK5", "PBX1", "XYLT1", "MUC1", "AGR2", "TFF3", "GBP4",
+  "MUC5AC", "MUC4", "MUC2", "VIM", "WNT7A", "CLCA1", "CLCA3",
+  "APOA1", "APOA4", "ALPI", "RBP2", "OLFM4", "ALCAM",
+  "EGR4", "SMOC2", "EGFL6"
+)
+
+Idents(test_heatmap) <- "seurat_clusters"
+
+
+features_present <- features[features %in% rownames(test_heatmap)]
+
+avg_seurat <- AggregateExpression(
+  test_heatmap,
+  features = features_present,
+  assays = "RNA",
+  slot = "scale.data",
+  group.by = "seurat_clusters",
+  return.seurat = TRUE
+)
+
+avg_seurat <- ScaleData(
+  avg_seurat,
+  features = features_present,
+  verbose = FALSE
+)
+
+Idents(avg_seurat) <- factor(
+  Idents(avg_seurat),
+  levels = paste0("g", 0:5)
+)
+levels(Idents(avg_seurat)) <- new.cluster.ids
+
+heatmap <- DoHeatmap(
+  avg_seurat,
+  features = features_present,
+  draw.lines = FALSE,
+  size = 4,
+  label = FALSE   # ⬅ removes cluster names on top
+) +
+  scale_fill_gradientn(
+    colors = c("#6BAED6", "white", "#B22222")
+  )
+
+###-----------------------------------cell number calculation-----------------------------------------------------------------
+#---------------------------------------------Figure 2C------------------------------------------------------------------------
+new.cluster.ids <- c("Immature enterocytes",
+                     "Immature goblets",
+                     "Goblets",
+                     "Enterocytes",
+                     "Undifferentiated cells",
+                     "Stem/TA cells"
+)
+
+test2 = test
+
+df <- test2@meta.data
+new.cluster.ids <- as.data.frame(c("0"="Immature enterocytes",
+                                   "1"="Immature goblets",
+                                   "2"="Goblets",
+                                   "3"="Enterocytes",
+                                   "4"="Undifferentiated cells",
+                                   "5"="Stem/TA cells"))
+new.cluster.ids$seurat_clusters <- row.names(new.cluster.ids)
+colnames(new.cluster.ids) <- c( "cluster_name","seurat_clusters")
+
+df <- merge(df, new.cluster.ids, by = "seurat_clusters")
+
+cellnumber = df %>%
+  group_by(orig.ident, cluster_name) %>%
+  summarise(n = n()) 
+
+library(dplyr)
+library(ggplot2)
+library(RColorBrewer)
+
+cellnumber <- cellnumber %>%
+  mutate(group = case_when(
+    orig.ident %in% c("Ctrl1", "Ctrl2") ~ "Control",
+    orig.ident %in% c("CVB1", "CVB2") ~ "CVB infection"
+  ))
+
+cellnumber_grouped <- cellnumber %>%
+  group_by(group, cluster_name) %>%
+  summarise(n = sum(n), .groups = "drop")
+
+cellnumber_grouped <- cellnumber_grouped %>%
+  group_by(group) %>%
+  mutate(percent = n / sum(n) * 100)
+
+cluster_colors <- c(
+  "Immature enterocytes" = "#8BC34A", 
+  "Immature goblets" = "#64B5F6",
+  "Goblets" = "#F4511E",
+  "Enterocytes" = "#FF9800",
+  "Undifferentiated cells" = "#9E9E9E",
+  "Stem/TA cells" = "#9C27B0"
+)
+
+cell_number = ggplot(cellnumber_grouped, aes(x = group, y = percent, fill = cluster_name)) +
+  geom_bar(stat = "identity", color = "black", width = 0.3) +  # black line and narrower bars
+  coord_flip() +
+  scale_fill_manual(values = cluster_colors) +
+  labs(x = NULL, y = "Percentage of Cells", fill = "Cell Types") +
+  theme_minimal(base_size = 8) +
+  theme(
+    panel.background = element_rect(fill = "white", color = NA),
+    plot.background = element_rect(fill = "white", color = NA),
+    axis.text.y = element_text(size = 10, face = "bold"),
+    axis.text.x = element_text(size = 8),
+    legend.position = "bottom",
+    legend.title = element_text(size = 5, face = "bold"),
+    legend.text = element_text(size = 5),
+    panel.grid = element_blank()  # remove grid lines for cleaner look
+  ) +
+  guides(fill = guide_legend(nrow = 2, byrow = TRUE))
+
+###-----------------------------------------------------cell phase------------------------------------------------------
+#------------------------------------------------------Figure 2D---------------------------------------------------------
+library(dplyr)
+library(ggplot2)
+
+# 1. Extract metadata
+df <- ileum_infection_sc@meta.data
+
+# 2. Calculate cell numbers per sample and phase
+cellnumber_phase <- df %>%
+  group_by(orig.ident, Phase) %>%   # make sure 'Phase' column exists
+  summarise(n = n(), .groups = "drop")
+
+# 3. Create Control vs CVB infection group
+cellnumber_phase <- cellnumber_phase %>%
+  mutate(group = case_when(
+    orig.ident %in% c("Ctrl1", "Ctrl2") ~ "Control",
+    orig.ident %in% c("CVB1", "CVB2") ~ "CVB infection"
+  ))
+
+# 4. Aggregate counts within each group
+cellnumber_phase_grouped <- cellnumber_phase %>%
+  group_by(group, Phase) %>%
+  summarise(n = sum(n), .groups = "drop")
+
+# 5. Calculate percentage of cells per group
+cellnumber_phase_grouped <- cellnumber_phase_grouped %>%
+  group_by(group) %>%
+  mutate(percent = n / sum(n) * 100)
+
+# 6. Set colors for phases
+phase_colors <- c(
+  "G1" = "#8BC34A",
+  "S" = "#64B5F6",
+  "G2M" = "#F4511E"
+)
+
+# 7. Plot stacked bar with percentage labels
+cell_phase = ggplot(cellnumber_phase_grouped, aes(x = group, y = percent, fill = Phase)) +
+  geom_bar(stat = "identity", color = "black", width = 0.3) +
+  geom_text(aes(label = paste0(round(percent, 1), "%")), 
+            position = position_stack(vjust = 0.5), size = 4) +  # percentage labels
+  coord_flip() +
+  scale_fill_manual(values = phase_colors) +
+  labs(x = NULL, y = "Percentage of Cells", fill = "Cell Cycle Phase") +
+  theme_minimal(base_size = 10) +
+  theme(
+    panel.background = element_rect(fill = "white", color = NA),
+    plot.background = element_rect(fill = "white", color = NA),
+    axis.text.y = element_text(size = 10, face = "bold"),
+    axis.text.x = element_text(size = 8),
+    legend.position = "bottom",
+    legend.title = element_text(size = 5, face = "bold"),
+    legend.text = element_text(size = 5),
+    panel.grid = element_blank()
+  )
+
+#-------------------------------Graph for figure 2 images--------------------------------------------------------------
+filler <- ggplot()
+library(gridExtra)
+library(ggplot2)
+
+UMAP <- DimPlot(
+  test2,
+  reduction = "umap",
+  label = TRUE,
+  pt.size = 1,
+  label.size = 3
+) +
+  theme(
+    legend.text  = element_text(size = 6),
+    legend.title = element_text(size = 7),
+    legend.key.size = unit(0.3, "cm")
+  )
+
+UMAP
+
+UMAP #A
+
+heatmap <- DoHeatmap(
+  avg_seurat,
+  features = features_present,
+  draw.lines = FALSE,
+  size = 3,
+  label = FALSE
+) +
+  scale_fill_gradientn(
+    colors = c("#6BAED6", "white", "#B22222")
+  ) +
+  theme(
+    legend.text  = element_text(size = 8),
+    legend.title = element_text(size = 9),
+    legend.key.height = unit(0.4, "cm"),
+    legend.key.width  = unit(0.4, "cm")
+  )
+
+heatmap
+
+heatmap #B
+
+dotplot <- DotPlot(
+  test2,
+  features = features,
+  dot.scale = 8,
+  col.min = 0,
+  col.max = 0.4,
+  cols = c("lightgreen", "red")
+) +
+  theme(
+    axis.text.x = element_text(
+      angle = 90,
+      size = 8    # ⬅ gene names
+    ),
+    axis.text.y = element_text(
+      size = 8    # ⬅ cell type names
+    ),
+    legend.text  = element_text(size = 5),
+    legend.title = element_text(size = 5),
+    legend.key.size = unit(0.35, "cm")
+  )
+
+dotplot #C
+
+cell_number #D
+
+cell_phase #E
+
+p <- arrangeGrob(
+  arrangeGrob(UMAP, heatmap, ncol = 2),
+  dotplot,
+  arrangeGrob(cell_number, cell_phase, ncol = 2),
+  ncol = 1,
+  heights = c(1.5, 1.3, 1)
+)
+
+p <- as_ggplot(p)
+
+p <- p +
+  draw_plot_label(
+    label = c("A", "B", "C", "D", "E"),
+    size = 16,
+    fontface = "bold",
+    x = c(0.0, 0.48, 0.0, 0.0, 0.48),
+    y = c(0.98, 0.98, 0.6, 0.28, 0.28)
+  )
+
+p
+ggexport(p,filename = "Figure_2.tiff",
+         width = 2500, # 7 inch max width 2100
+         height = 2500, 
+         res = 300) # Figure panels should be prepared at a minimum resolution of 300 dpi and saved at a maximum width of 180 mm (7,08661 inch).  
