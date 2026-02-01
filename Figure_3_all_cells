@@ -1,0 +1,387 @@
+##-----------------------------------------------loading samples-----------------------------------------------------------------
+library(Seurat)
+library(hdf5r) #devtools::install_github("hhoeflin/hdf5r")
+library(readxl)
+library(dplyr)
+library(scclusteval) #devtools::install_github("crazyhottommy/scclusteval")
+library(ggpubr)
+
+setwd("C:/Users/leh/OneDrive - TUNI.fi/Documents/Data/scRNA_2024/images_R_29052024_coding")
+
+#setwd("~/Documents/reovirus")
+CVB.1 <- Read10X_h5("C://Users//leh//OneDrive - TUNI.fi//Documents//Data//scRNA_2024//sample1_50Mdepth//outs//filtered_feature_bc_matrix.h5")
+Ctrl.1 <- Read10X_h5("C://Users//leh//OneDrive - TUNI.fi//Documents//Data//scRNA_2024//sample2_50Mdepth//outs//filtered_feature_bc_matrix.h5")
+CVB.2 <- Read10X_h5("C://Users//leh//OneDrive - TUNI.fi//Documents//Data//scRNA_2024//sample3_50Mdepth//outs//filtered_feature_bc_matrix.h5")
+Ctrl.2 <-  Read10X_h5("C://Users//leh//OneDrive - TUNI.fi//Documents//Data//scRNA_2024//sample4_50Mdepth//outs//filtered_feature_bc_matrix.h5")
+
+celseq1 <- CreateSeuratObject(counts = CVB.1, project = "CVB1")
+celseq2 <- CreateSeuratObject(counts = Ctrl.1, project = "Ctrl1")
+celseq3 <- CreateSeuratObject(counts = CVB.2, project = "CVB2")
+celseq4 <- CreateSeuratObject(counts = Ctrl.2, project = "Ctrl2")
+
+ileum_infection_sc <- merge(celseq1, y = c(celseq2, celseq3,celseq4), 
+                            add.cell.ids = c("CVB1", "Ctrl1", "CVB2","Ctrl2"), project = "organoids_infection_sc")
+
+dim(ileum_infection_sc) #[1] 36601 4144
+ileum_infection_sc = JoinLayers(ileum_infection_sc)
+counts_per_cell <- Matrix::colSums(ileum_infection_sc@assays$RNA@layers$counts) # length 4144
+counts_per_gene <- Matrix::rowSums(ileum_infection_sc@assays$RNA@layers$counts)
+a <- counts_per_cell[counts_per_cell > 1] # 4144
+b <- counts_per_gene[counts_per_gene > 3] #25882
+
+filtered_matrix <- ileum_infection_sc@assays$RNA@counts[names(b),names(a)]# not work
+counts <- GetAssayData(ileum_infection_sc, slot = "counts")
+rownames(counts)[1:5]  # should now show gene names
+colnames(counts)[1:5]  # should show cell barcodes
+counts_per_cell <- Matrix::colSums(counts)
+counts_per_gene <- Matrix::rowSums(counts)
+a <- counts_per_cell[counts_per_cell > 1000] # 3081
+b <- counts_per_gene[counts_per_gene > 3] #20000
+genes_to_keep <- intersect(rownames(counts), names(b))
+cells_to_keep <- intersect(colnames(counts), names(a))
+
+# Subset using matrix-style indexing
+filtered_matrix <- counts[genes_to_keep, cells_to_keep]
+
+filtered_matrix <- counts[names(b), names(a)]
+dim(filtered_matrix) #[1] 29535 24747 
+ileum_infection_sc <- CreateSeuratObject(counts = filtered_matrix)
+head(ileum_infection_sc@meta.data)
+dim(ileum_infection_sc)
+
+##------------------------------------------------samples cleaning-----------------------------------------------------------------------
+ileum_infection_sc[["percent.mito"]] = PercentageFeatureSet(ileum_infection_sc, pattern = "^MT-")
+ileum_infection_sc <- subset(ileum_infection_sc, subset = percent.mito < 15)
+ileum_infection_sc <- subset(ileum_infection_sc, subset = nCount_RNA >= 500)
+ileum_infection_sc <- subset(ileum_infection_sc, subset = nFeature_RNA <= 5000)
+ileum_infection_sc <- subset(ileum_infection_sc, subset = nCount_RNA < 30000)
+ileum_infection_sc <- subset(ileum_infection_sc, subset = nFeature_RNA >= 200)
+dim(ileum_infection_sc) # 20296 2757
+
+###-------------------------------------------samples name-------------------------------------------------------------------------------
+test1 = ileum_infection_sc
+orig.ident <- as.vector(test1$old.ident)
+orig.ident <- replace(orig.ident, orig.ident == "Ctrl1", "Ctrl")
+orig.ident <- replace(orig.ident, orig.ident == "Ctrl2", "Ctrl")
+
+orig.ident <- replace(orig.ident, orig.ident == "CVB1", "CVB")
+orig.ident <- replace(orig.ident, orig.ident == "CVB2", "CVB")
+
+test1$orig.ident <- NULL
+test1 <- AddMetaData(
+  object = test,
+  metadata = orig.ident,
+  col.name = 'study.rep'
+)
+
+table(test1$study.rep)
+Idents(test1) <- "study.rep"
+deg <- FindMarkers(test1, ident.1 = "CVB", ident.2 = "Ctrl", 
+                   logfc.threshold = 0, min.pct = 0.1, test.use = "wilcox")
+
+# Add gene column for plotting
+deg$gene <- rownames(deg)
+# Define significance thresholds
+deg$significance <- "Not Significant"
+deg$significance[deg$p_val_adj < 0.05 & abs(deg$avg_log2FC) > 0.25] <- "Significant"
+library(ggplot2)
+library(ggrepel)
+# Define up/down/non-significant
+deg$regulation <- "Not Significant"
+deg$regulation[deg$p_val_adj < 0.05 & deg$avg_log2FC > 0.25] <- "Up"
+deg$regulation[deg$p_val_adj < 0.05 & deg$avg_log2FC < -0.25] <- "Down"
+# Label only top genes
+deg$label <- ifelse(deg$gene %in% top_genes$gene, deg$gene, NA)
+
+###--------------------------------------figure 3 A vocanol plot---------------------------------------------------------------------
+
+# Volcano plot
+deg$significance <- "Not Significant"
+deg$significance[deg$p_val_adj < 0.05 & deg$avg_log2FC > 0.25] <- "Upregulated"
+deg$significance[deg$p_val_adj < 0.05 & deg$avg_log2FC < -0.25] <- "Downregulated"
+
+# Select top up/downregulated genes for labeling
+top_up <- deg %>%
+  filter(significance == "Upregulated") %>%
+  arrange(-avg_log2FC) %>%
+  head(10)
+top_down <- deg %>%
+  filter(significance == "Downregulated") %>%
+  arrange(avg_log2FC) %>%
+  head(10)
+top_genes <- bind_rows(top_up, top_down)
+# Volcano plot with labels
+avocano <- ggplot(deg, aes(x = avg_log2FC, y = -log10(p_val_adj), color = significance)) +
+  geom_point(alpha = 0.7, size = 1.2) +
+  geom_text_repel(data = top_genes, aes(label = gene), size = 3, max.overlaps = 50) +
+  scale_color_manual(values = c(
+    "Not Significant" = "grey60",
+    "Upregulated" = "red",
+    "Downregulated" = "blue"
+  )) +
+  theme_classic() +
+  labs(
+    title = "Volcano Plot: CVB vs Ctrl",
+    x = "Log2 Fold Change (CVB / Ctrl)",
+    y = "-Log10 Adjusted P-value",
+    color = "Regulation"
+  ) +
+  theme(plot.title = element_text(hjust = 0.5))
+
+##--------------------------------------------------------Figure 3B reactome enrichment------------------------------------------------------------
+library(ggplot2)
+library(ggrepel)
+
+deg$significance <- "Not Significant"
+deg$significance[deg$p_val_adj < 0.05 & abs(deg$avg_log2FC > 0.25] <- "Significant"
+
+# Define up/down/non-significant
+deg$regulation <- "Not Significant"
+deg$regulation[deg$p_val_adj < 0.05 & deg$avg_log2FC > 0.4] <- "Up"
+deg$regulation[deg$p_val_adj < 0.05 & deg$avg_log2FC < -0.4] <- "Down"
+# Volcano plot
+deg$significance <- "Not Significant"
+deg$significance[deg$p_val_adj < 0.05 & deg$avg_log2FC > 0.4] <- "Upregulated"
+deg$significance[deg$p_val_adj < 0.05 & deg$avg_log2FC < -0.4] <- "Downregulated"
+
+head(deg)
+
+# Required libraries
+library(clusterProfiler)
+library(org.Hs.eg.db)
+library(ReactomePA)
+library(enrichplot)
+library(ggplot2)
+
+sig_genes <- deg$gene[deg$p_val_adj < 0.05 & deg$avg_log2FC > 0.4]
+length(sig_genes)
+if(length(sig_genes) == 0){
+  stop("No significant genes with given threshold!")
+}
+
+sig_entrez <- bitr(
+  sig_genes,
+  fromType = "SYMBOL",
+  toType   = "ENTREZID",
+  OrgDb    = org.Hs.eg.db
+)
+sig_entrez_ids <- unique(sig_entrez$ENTREZID)
+
+reactome_res_up <- enrichPathway(
+  gene = sig_entrez_ids,
+  organism = "human",
+  pvalueCutoff = 0.001,
+  readable = TRUE
+)
+head(as.data.frame(reactome_res_up), 10)
+
+dotplot(reactome_res_up, showCategory = 15) +
+  ggtitle("Reactome Enrichment (Significant DEGs)")
+
+df = as.data.frame(reactome_res_up)
+pathways_of_interest <- c(
+  "Viral mRNA Translation",
+  "Antigen processing-Cross presentation",
+  "Interferon alpha/beta signaling",
+  "Interferon Signaling",
+  "Interleukin-12 signaling",
+  "Interleukin-12 family signaling",
+  "Selective autophagy",
+  "IRAK2 mediated activation of TAK1 complex"
+)
+filtered_df <- df[df$Description %in% pathways_of_interest, ]
+filtered_enrich <- new("enrichResult",
+                       result = filtered_df,
+                       pvalueCutoff = reactome_result@pvalueCutoff,
+                       pAdjustMethod = reactome_result@pAdjustMethod,
+                       qvalueCutoff = reactome_result@qvalueCutoff,
+                       organism = reactome_result@organism,
+                       ontology = "Reactome",
+                       gene = reactome_result@gene,
+                       universe = reactome_result@universe,
+                       geneSets = reactome_result@geneSets,
+                       readable = TRUE)
+reactome = dotplot(filtered_enrich, 
+        showCategory = length(pathways_of_interest), 
+        color = "p.adjust") +
+  ggtitle("Selected Reactome Pathways") +
+  xlab("Gene Ratio") +
+  ylab("Pathway") +
+  scale_color_gradient(low = "orange", high = "red") +
+  theme_classic(base_size = 14) +
+  theme(
+    plot.title = element_text(size = 18, face = "bold", hjust = 0.5),
+    axis.title = element_text(size = 16),
+    axis.text = element_text(size = 14),
+    legend.title = element_text(size = 14),
+    legend.text = element_text(size = 12),
+    
+    # This adds the box around the plot
+    panel.border = element_rect(color = "black", fill = NA, linewidth = 1),
+    axis.line = element_line(color = "black")
+  )
+
+###-----------------------------------figure 3C Inteferon alpha signaling enrichment-----------------------------------------------
+deg
+library(fgsea)
+library(msigdbr)
+library(dplyr)
+
+head(deg)
+m_df <- msigdbr(
+  species  = "Homo sapiens",
+  category = "H"
+)
+pathways <- split(m_df$gene_symbol, m_df$gs_name)
+
+ranks <- deg$avg_log2FC
+names(ranks) <- deg$gene
+# remove NA + duplicates
+ranks <- ranks[!is.na(ranks)]
+ranks <- ranks[!duplicated(names(ranks))]
+# rank genes
+ranks <- sort(ranks, decreasing = TRUE)
+
+fg <- fgsea(
+  pathways = pathways,
+  stats    = ranks,
+  minSize  = 10,
+  maxSize  = 500
+)
+
+fg <- fg[order(fg$padj), ]
+head(fg, 10)
+top_pathway <- fg$pathway[1]
+
+plotEnrichment(
+  pathways[[top_pathway]],
+  ranks
+) +
+  ggtitle(top_pathway)
+
+top_pathway <- "HALLMARK_INTERFERON_ALPHA_RESPONSE"  # explicitly set IFN-γ
+ifn_genes <- pathways[[top_pathway]]  # genes in IFN-γ pathway
+
+# Extract stats
+nes_val <- round(fg$NES[fg$pathway == top_pathway], 2)
+padj_val <- signif(fg$padj[fg$pathway == top_pathway], 3)
+
+# 1. Enrichment curve with thicker green line
+p1 <- plotEnrichment(ifn_genes, ranks) +
+  ggtitle(paste0("Enrichment plot: ", top_pathway)) +
+  labs(
+    subtitle = paste0("NES = ", nes_val, ", FDR = ", padj_val),
+    x = NULL,
+    y = "Enrichment Score (ES)"
+  ) +
+  theme_bw(base_size = 14) +
+  theme(
+    plot.title = element_text(hjust = 0.5, face = "bold", size = 16),
+    plot.subtitle = element_text(hjust = 0.5, size = 12),
+    axis.text = element_text(color = "black"),
+    axis.title = element_text(face = "bold"),
+    legend.position = "none"
+  )
+# 2. Ranking metric scores bar plot (bottom panel) with IFN-γ genes highlighted
+df_ranks <- data.frame(
+  gene = names(ranks),
+  rank = seq_along(ranks),
+  score = ranks,
+  category = ifelse(names(ranks) %in% ifn_genes, "IFN-γ",
+                    ifelse(ranks > 0, "Up", "Down"))
+)
+
+p2 <- ggplot(df_ranks, aes(x = rank, y = score, fill = category)) +
+  geom_bar(stat = "identity") +
+  scale_fill_manual(values = c("Up" = "red", "Down" = "blue", "IFN-γ" = "green")) +
+  theme_bw(base_size = 12) +
+  labs(x = "Rank in Ordered Dataset", y = "Ranking metric scores", fill = "Gene Category") +
+  theme(
+    axis.text = element_text(color = "black"),
+    axis.title = element_text(face = "bold")
+  )
+
+# Combine enrichment curve (top) and barplot (bottom) 
+combined_plot = p1 / p2 + plot_layout(heights = c(2, 1))
+
+###----------------------------------------------------------figure 3 D compare gene with human organoids treated with IFNgamma--------------------------------------
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+###---------------------------------------------------figure 3 E selected GO enrichment with up and down regulated genes-------------------------------------------------------
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+###-----------------------------------------------------------grapping images------------------------------------------------------------------------------------------------
+library(readxl)
+library(dplyr)
+library(numform)
+library(ggpubr)
+library(caTools)
+library(randomForest)
+library(readxl)
+library(stringr)
+library(caret)
+library(gridExtra)
+library(cowplot)
+
+mytheme <- theme_classic(base_family='sans') + theme(axis.text.x = element_text(size=6, color = "black"),
+                                                     axis.text.y= element_text(size=6, color = "black"),
+                                                     axis.title.y = element_text(size=8, color = "black"),
+                                                     axis.title.x = element_text(size=8, color = "black"),
+                                                     legend.text = element_text( size = 4, color = "black"),
+                                                     legend.key.size = unit(2, 'mm'),
+                                                     legend.position = "top",
+                                                     legend.title = element_blank(),
+                                                     plot.title = element_text(hjust = 0.5, size = 8,face = "bold"),
+                                                     axis.line = element_line(colour = "black", linewidth=1/.pt),
+                                                     strip.text.x = element_text(size = 6),
+                                                     strip.text.y = element_text(size = 6),
+                                                     panel.background = element_rect(fill = 'White'),
+                                                     panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+                                                     axis.title.x.top = element_text(color='#4daf4a',size=7), 
+                                                     axis.text.x.top = element_text(color='#4daf4a',size=6))
+palette <- c(GFDd = "#00b347", GFDp = "#005923",PGCd = "#6500ff", PGCp = "#ff6500")
+
+# need to modify from here for grappign image
+filler <- ggplot()
+library(gridExtra)
+library(ggplot2)
+figure_qc <- ggarrange(
+  qc, qc_after,
+  ncol = 1,
+  labels = c("A", "B"),
+  font.label = list(size = 16, face = "bold"),
+  align = "v"
+)
+ggexport(figure_qc,filename = "supplement_1.tiff",
+         width = 1800, # 7 inch max width 2100
+         height = 1700, 
+         res = 300) # Figure 
