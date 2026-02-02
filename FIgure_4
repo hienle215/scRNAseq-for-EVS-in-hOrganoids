@@ -1,0 +1,161 @@
+#####----------------------------------------------------Figure 4 A-------ISG signaling by heatmap based on cells------------------------------------------------------------------------------------------------
+#####-----------------------------------------------------continuing from Figure_3-------------------------------------------------------------------------------------------------------------------------------
+new.cluster.ids <- c("Immature enterocytes","Immature goblets", "Goblets","Enterocytes", "Undifferentiated cells","Stem/TA cells")
+test2 = ileum_infection_sc
+names(new.cluster.ids) <- levels(test2)
+test2 <- RenameIdents(test2, new.cluster.ids)
+UMAP <- DimPlot(test2, reduction = "umap", label = TRUE, pt.size = 1.5, label.size = 5) 
+
+ifn_genes # gene list from inteferon alpha signaling
+ifn_genes_sc <- intersect(ifn_genes, rownames(test2))
+length(ifn_genes_sc)
+ifn_genes_ordered <- ifn_genes_sc[ order(ranks[ifn_genes_sc], decreasing = TRUE) ]
+avg_exp <- AverageExpression(test2, features = ifn_genes_ordered, assays = "RNA", slot = "scale.data")$RNA
+
+library(pheatmap)
+library(RColorBrewer)
+heat_cols <- colorRampPalette(c("#2C7BB6", "white", "#D7191C"))(100)
+heatmap = pheatmap( avg_exp,
+  scale = "row",
+  color = heat_cols,
+  cluster_rows = TRUE,
+  cluster_cols = TRUE,
+  treeheight_row = 0,     # ⬅️ hides row cluster lines
+  treeheight_col = 30,
+  fontsize_row = 6,
+  fontsize_col = 8,
+  border_color = NA,
+  main = "IFN-α response genes across clusters")
+
+####-------------------------------------Figure 4B-------TGM2 and MUC5AC expression per clusters-----------------------------------------------------------------
+violin_plot = VlnPlot(test2, features = c("TGM2", "MUC5AC"))
+
+###------------------------------------- figure 4C vocanol plot --------------------------------------------------------
+orig.ident <- as.vector(test2$orig.ident)
+orig.ident <- replace(test2, orig.ident == "Ctrl1", "Ctrl")
+orig.ident <- replace(test2, orig.ident == "Ctrl2", "Ctrl")
+orig.ident <- replace(test2, orig.ident == "CVB1", " CVB")
+orig.ident <- replace(test2, orig.ident == "CVB2", " CVB")
+test2$orig.ident <- NULL
+head(test2@meta.data)
+test2 <- AddMetaData(object = test2, metadata = orig.ident, col.name = 'study.rep')
+sub_sc = subset(test2, idents = "Immature goblets")
+Idents(sub_sc) <- "study.rep"
+levels(Idents(sub_sc))
+deg_sub <- FindMarkers( sub_sc, ident.1 = "CVB",ident.2 = "Ctrl",logfc.threshold = 0.25,min.pct = 0.1, test.use = "wilcox")
+
+deg_sub$gene <- rownames(deg_sub)
+# Define significance thresholds
+deg_sub$significance <- "Not Significant"
+deg_sub$significance[deg_sub$p_val_adj < 0.05 & abs(deg_sub$avg_log2FC) > 0.25] <- "Significant"
+
+# Define up/down/non-significant
+deg_sub$regulation <- "Not Significant"
+deg_sub$regulation[deg_sub$p_val_adj < 0.05 & deg_sub$avg_log2FC > 0.25] <- "Up"
+deg_sub$regulation[deg_sub$p_val_adj < 0.05 & deg_sub$avg_log2FC < -0.25] <- "Down"
+# Label only top genes
+deg_sub$label <- ifelse(deg_sub$gene %in% top_genes$gene, deg_sub$gene, NA)
+
+###--------------------------------------figure 4C vocanol plot---------------------------------------------------------------------
+
+# Volcano plot
+deg_sub$significance <- "Not Significant"
+deg_sub$significance[deg_sub$p_val_adj < 0.05 & deg_sub$avg_log2FC > 0.25] <- "Upregulated"
+deg_sub$significance[deg_sub$p_val_adj < 0.05 & deg_sub$avg_log2FC < -0.25] <- "Downregulated"
+
+# Select top up/downregulated genes for labeling
+top_up <- deg_sub %>%
+  filter(significance == "Upregulated") %>%
+  arrange(-avg_log2FC) %>%
+  head(10)
+top_down <- deg_sub %>%
+  filter(significance == "Downregulated") %>%
+  arrange(avg_log2FC) %>%
+  head(10)
+top_genes <- bind_rows(top_up, top_down)
+# Volcano plot with labels
+avocano_sub <- ggplot(deg_sub, aes(x = avg_log2FC, y = -log10(p_val_adj), color = significance)) +
+  geom_point(alpha = 0.7, size = 1.2) +
+  geom_text_repel(data = top_genes, aes(label = gene), size = 3, max.overlaps = 50) +
+  scale_color_manual(values = c( "Not Significant" = "grey60","Upregulated" = "red","Downregulated" = "blue" )) +
+  theme_classic() +
+  labs( title = "Volcano Plot: CVB vs Ctrl", x = "Log2 Fold Change (CVB / Ctrl)",  y = "-Log10 Adjusted P-value", color = "Regulation" ) +
+  theme(plot.title = element_text(hjust = 0.5))
+
+# test2 <- AddModuleScore( test2, features = list(IFN = ifn_genes), assay = "RNA", name = "IFN_score")
+# sub_sc <- subset(test2, idents = "Immature goblets")
+# VlnPlot(sub_sc, features = "IFN_score1", group.by = "study.rep",pt.size = 0.1)
+
+###------------------------------------------Figure 4D heatmap of reactome enrichment--------------------------------------------------------------------------------------------------
+deg_sub$significance <- "Not Significant"
+deg_sub$significance[deg_sub$p_val_adj < 0.05 & abs(deg_sub$avg_log2FC > 0.25] <- "Significant"
+
+# Define up/down/non-significant
+deg_sub$regulation <- "Not Significant"
+deg_sub$regulation[deg_sub$p_val_adj < 0.05 & deg_sub$avg_log2FC > 0.25] <- "Up"
+deg_sub$regulation[deg_sub$p_val_adj < 0.05 & deg_sub$avg_log2FC < -0.25] <- "Down"
+
+# Volcano plot
+deg_sub$significance <- "Not Significant"
+deg_sub$significance[deg_sub$p_val_adj < 0.05 & deg_sub$avg_log2FC > 0.25] <- "Upregulated"
+deg_sub$significance[deg_sub$p_val_adj < 0.05 & deg_sub$avg_log2FC < -0.25] <- "Downregulated"
+head(deg_sub)
+sig_genes_up <- deg_sub$gene[deg_sub$p_val_adj < 0.05 & deg_sub$avg_log2FC > 0.25]
+length(sig_genes)
+if(length(sig_genes) == 0){ stop("No significant genes with given threshold!")}
+sig_entrez <- bitr( sig_genes, fromType = "SYMBOL",  toType   = "ENTREZID", OrgDb    = org.Hs.eg.db)
+sig_entrez_ids <- unique(sig_entrez$ENTREZID)
+reactome_res_up <- enrichPathway(  gene = sig_entrez_ids, organism = "human", pvalueCutoff = 0.05, readable = TRUE)
+head(as.data.frame(reactome_res_up), 10)
+
+dotplot(reactome_res_up, showCategory = 15) +
+  ggtitle("Reactome Enrichment (Significant DEGs)")
+
+df_up <- as.data.frame(reactome_res_up)
+
+pathways_of_interest <- c(
+  "Interferon gamma signaling",
+  "Interferon alpha/beta signaling",
+  "Interferon Signaling",
+  "Antigen processing-Cross presentation",
+  "Viral mRNA Translation",
+  "Peptide chain elongation"
+)
+df_up <- as.data.frame(reactome_res_up) %>%
+  dplyr::filter(Description %in% pathways_of_interest)
+
+filtered_enrich <- new(
+  "enrichResult",
+  result = df_up,
+  pvalueCutoff  = reactome_res_up@pvalueCutoff,
+  pAdjustMethod = reactome_res_up@pAdjustMethod,
+  qvalueCutoff  = reactome_res_up@qvalueCutoff,
+  organism      = reactome_res_up@organism,
+  ontology      = "Reactome",
+  gene          = reactome_res_up@gene,
+  universe      = reactome_res_up@universe,
+  geneSets      = reactome_res_up@geneSets,
+  readable      = TRUE
+)
+
+# Dotplot
+p <- dotplot(
+  filtered_enrich,
+  showCategory = nrow(df_up),
+  color = "p.adjust"
+) +
+  scale_y_discrete(labels = function(x) str_wrap(x, width = 35)) +
+  labs(
+    title = "Reactome Pathway Enrichment (Upregulated Genes)",
+    y = "Reactome Pathway",
+    x = "Gene Ratio"
+  ) +
+  theme_classic(base_size = 10) +
+  theme(
+    plot.title = element_text(face = "bold", hjust = 0.5),
+    axis.text.y = element_text(size = 9)
+  )
+
+p
+
+###-----------------------------Figure 4 E dotplot about goblet cell proliferation------------------------------------------------------------------------------------------------------------------
