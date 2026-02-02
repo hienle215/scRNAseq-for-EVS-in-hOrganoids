@@ -58,8 +58,29 @@ ileum_infection_sc <- subset(ileum_infection_sc, subset = nCount_RNA < 30000)
 ileum_infection_sc <- subset(ileum_infection_sc, subset = nFeature_RNA >= 200)
 dim(ileum_infection_sc) # 20296 2757
 
+###--------------------------------------normalization of samples---------------------------------------------------------------------------
+ileum_infection_sc = JoinLayers(ileum_infection_sc)
+counts_per_gene <- Matrix::rowSums(ileum_infection_sc@assays$RNA@layers$counts) #36601
+b <- counts_per_gene[counts_per_gene > 3] #18652
+#Normalize data
+ileum_infection_sc <- NormalizeData(ileum_infection_sc, normalization.method = "LogNormalize", scale.factor = 1e3)
+ileum_infection_sc <- FindVariableFeatures(ileum_infection_sc)
+plot1 <- VariableFeaturePlot(ileum_infection_sc)
+#Cell cycle
+s_genes = c("MCM4", "EXO1", "SLBP", "GMNN", "CDC45", "MCM6", "RRM2", "POLD3", "BLM", "UBR7", "MCM5", "CLSPN", "HELLS", "RPA2", "TYMS", "RRM1", "RFC2", "PRIM1", "BRIP1", "USP1", "UNG", "POLA1", "MCM2", "FEN1","TIPIN", "PCNA", "CDCA7", "UHRF1", "CASP8AP2", "CDC6", "DSCC1")
+g2m_genes = c("NUF2", "PSRC1", "NCAPD2", "CCNB2", "SMC4", "LBR", "TACC3", "CENPA", "KIF23", "CDCA2", "ANP32E", "G2E3", "CDCA3", "ANLN", "CENPE", "GAS2L3","TUBB4B", "CENPF", "DLGAP5", "HJURP", "GTSE1", "BUB1", "BIRC5", "UBE2C", "RANGAP1", "HMMR", "ECT2", "TPX2", "CKAP5", "CBX5", "NEK2", "TTK", "CDCA8", "NUSAP1", "CTCF", "CDC20", "CKS2", "TMPO", "CKAP2L", "CDK1", "TOP2A","AURKA", "CKAP2", "HMGB2", "CDC25C", "NDC80", "KIF11")#1
+ileum_infection_sc <- CellCycleScoring(ileum_infection_sc, s.features = s_genes, g2m.features = g2m_genes, set.ident = TRUE)
+all.genes <- rownames(ileum_infection_sc)
+ileum_infection_sc <- ScaleData(ileum_infection_sc,vars.to.regress = c("nCount_RNA", "percent.mito", "S.Score", "G2M.Score"), features = all.genes)
+#ileum_infection_sc <- ScaleData(ileum_infection_sc, features = all.genes)
+ileum_infection_sc <- RunPCA(ileum_infection_sc, features = VariableFeatures(object = ileum_infection_sc))
+ileum_infection_sc <- FindNeighbors(ileum_infection_sc, dims = 1:30)
+ileum_infection_sc <- RunUMAP(ileum_infection_sc, dims = 1:30)
+test = ileum_infection_sc
+test = FindClusters(test, resolution = 0.45)
+
 ###-------------------------------------------samples name-------------------------------------------------------------------------------
-test1 = ileum_infection_sc
+test1 = test
 orig.ident <- as.vector(test1$old.ident)
 orig.ident <- replace(orig.ident, orig.ident == "Ctrl1", "Ctrl")
 orig.ident <- replace(orig.ident, orig.ident == "Ctrl2", "Ctrl")
@@ -77,7 +98,7 @@ test1 <- AddMetaData(
 table(test1$study.rep)
 Idents(test1) <- "study.rep"
 deg <- FindMarkers(test1, ident.1 = "CVB", ident.2 = "Ctrl", 
-                   logfc.threshold = 0, min.pct = 0.1, test.use = "wilcox")
+                   logfc.threshold = 0.25, min.pct = 0.1, test.use = "wilcox")
 
 # Add gene column for plotting
 deg$gene <- rownames(deg)
@@ -128,7 +149,7 @@ avocano <- ggplot(deg, aes(x = avg_log2FC, y = -log10(p_val_adj), color = signif
   ) +
   theme(plot.title = element_text(hjust = 0.5))
 
-##--------------------------------------------------------Figure 3B reactome enrichment------------------------------------------------------------
+##--------------------------------------------------------Figure 3B reactome enrichment-----------------------------------------------------------------------------------------------------------------------------------------
 library(ggplot2)
 library(ggrepel)
 
@@ -137,15 +158,13 @@ deg$significance[deg$p_val_adj < 0.05 & abs(deg$avg_log2FC > 0.25] <- "Significa
 
 # Define up/down/non-significant
 deg$regulation <- "Not Significant"
-deg$regulation[deg$p_val_adj < 0.05 & deg$avg_log2FC > 0.4] <- "Up"
-deg$regulation[deg$p_val_adj < 0.05 & deg$avg_log2FC < -0.4] <- "Down"
+deg$regulation[deg$p_val_adj < 0.05 & deg$avg_log2FC > 0.25] <- "Up"
+deg$regulation[deg$p_val_adj < 0.05 & deg$avg_log2FC < -0.25] <- "Down"
 # Volcano plot
 deg$significance <- "Not Significant"
-deg$significance[deg$p_val_adj < 0.05 & deg$avg_log2FC > 0.4] <- "Upregulated"
-deg$significance[deg$p_val_adj < 0.05 & deg$avg_log2FC < -0.4] <- "Downregulated"
-
+deg$significance[deg$p_val_adj < 0.05 & deg$avg_log2FC > 0.25] <- "Upregulated"
+deg$significance[deg$p_val_adj < 0.05 & deg$avg_log2FC < -0.25] <- "Downregulated"
 head(deg)
-
 # Required libraries
 library(clusterProfiler)
 library(org.Hs.eg.db)
@@ -153,12 +172,11 @@ library(ReactomePA)
 library(enrichplot)
 library(ggplot2)
 
-sig_genes <- deg$gene[deg$p_val_adj < 0.05 & deg$avg_log2FC > 0.4]
+# for upregulated genes
+sig_genes <- deg$gene[deg$p_val_adj < 0.05 & deg$avg_log2FC > 0.25]
 length(sig_genes)
 if(length(sig_genes) == 0){
-  stop("No significant genes with given threshold!")
-}
-
+  stop("No significant genes with given threshold!")}
 sig_entrez <- bitr(
   sig_genes,
   fromType = "SYMBOL",
@@ -166,7 +184,6 @@ sig_entrez <- bitr(
   OrgDb    = org.Hs.eg.db
 )
 sig_entrez_ids <- unique(sig_entrez$ENTREZID)
-
 reactome_res_up <- enrichPathway(
   gene = sig_entrez_ids,
   organism = "human",
@@ -174,10 +191,8 @@ reactome_res_up <- enrichPathway(
   readable = TRUE
 )
 head(as.data.frame(reactome_res_up), 10)
-
 dotplot(reactome_res_up, showCategory = 15) +
   ggtitle("Reactome Enrichment (Significant DEGs)")
-
 df = as.data.frame(reactome_res_up)
 pathways_of_interest <- c(
   "Viral mRNA Translation",
@@ -191,17 +206,18 @@ pathways_of_interest <- c(
 )
 filtered_df <- df[df$Description %in% pathways_of_interest, ]
 filtered_enrich <- new("enrichResult",
-                       result = filtered_df,
-                       pvalueCutoff = reactome_result@pvalueCutoff,
-                       pAdjustMethod = reactome_result@pAdjustMethod,
-                       qvalueCutoff = reactome_result@qvalueCutoff,
-                       organism = reactome_result@organism,
-                       ontology = "Reactome",
-                       gene = reactome_result@gene,
-                       universe = reactome_result@universe,
-                       geneSets = reactome_result@geneSets,
-                       readable = TRUE)
-reactome = dotplot(filtered_enrich, 
+  result = filtered_df,
+  pvalueCutoff  = reactome_res_up@pvalueCutoff,
+  pAdjustMethod = reactome_res_up@pAdjustMethod,
+  qvalueCutoff  = reactome_res_up@qvalueCutoff,
+  organism      = reactome_res_up@organism,
+  ontology      = "Reactome",
+  gene          = reactome_res_up@gene,
+  universe      = reactome_res_up@universe,
+  geneSets      = reactome_res_up@geneSets,
+  readable      = TRUE
+)
+reactome1 = dotplot(filtered_enrich, 
         showCategory = length(pathways_of_interest), 
         color = "p.adjust") +
   ggtitle("Selected Reactome Pathways") +
@@ -221,19 +237,89 @@ reactome = dotplot(filtered_enrich,
     axis.line = element_line(color = "black")
   )
 
+#downregulated genes for annotating reactome enrichment
+sig_genes_down <- deg$gene[deg$p_val_adj < 0.05 & deg$avg_log2FC < -0.25]
+length(sig_genes_down)
+if (length(sig_genes_down) == 0) {
+  stop("No significant downregulated genes with given threshold!")}
+sig_entrez_down <- bitr(
+  sig_genes_down,
+  fromType = "SYMBOL",
+  toType   = "ENTREZID",
+  OrgDb    = org.Hs.eg.db)
+sig_entrez_down_ids <- unique(sig_entrez_down$ENTREZID)
+reactome_res_down <- enrichPathway(
+  gene = sig_entrez_down_ids,
+  organism = "human",
+  pvalueCutoff = 0.05,
+  minGSSize = 3,
+  readable = TRUE)
+
+#merging reactome pathway of up and down in one graph
+df_up <- as.data.frame(reactome_res_up)
+pathways_of_interest <- c(
+  "Viral mRNA Translation",
+  "Antigen processing-Cross presentation",
+  "Interferon alpha/beta signaling",
+  "Interferon Signaling",
+  "Interleukin-12 signaling",
+  "Interleukin-12 family signaling",
+  "Selective autophagy",
+  "IRAK2 mediated activation of TAK1 complex"
+)
+df_up <- df_up %>% filter(Description %in% pathways_of_interest)
+df_up$regulation <- "Up"
+df_down <- as.data.frame(reactome_res_down)
+df_down <- df_down %>% arrange(p.adjust) %>% head(10)
+df_down$regulation <- "Down"
+df_combined <- bind_rows(df_up, df_down)
+# For mirrored effect: make GeneRatio negative for Down
+df_combined <- df_combined %>%
+  mutate(GeneRatio_signed = ifelse(regulation == "Down", -GeneRatio, GeneRatio))
+# Order pathways by absolute GeneRatio or a custom order
+df_combined$Description <- factor(df_combined$Description, levels = rev(unique(df_combined$Description)))
+# Function to convert "3/16" → 3/16 = 0.1875
+convertGeneRatio <- function(ratio) {
+  sapply(ratio, function(x) {
+    parts <- strsplit(x, "/")[[1]]
+    as.numeric(parts[1]) / as.numeric(parts[2])
+  })
+}
+# Apply to UP and DOWN
+df_up$GeneRatio <- convertGeneRatio(df_up$GeneRatio)
+df_down$GeneRatio <- convertGeneRatio(df_down$GeneRatio)
+df_up$regulation <- "Up"
+df_down$regulation <- "Down"
+df_combined <- bind_rows(df_up, df_down)
+df_combined <- df_combined %>%
+  mutate(GeneRatio_signed = ifelse(regulation == "Down", -GeneRatio, GeneRatio))
+
+df_combined$Description_wrapped <- str_wrap(df_combined$Description, width = 30)  # adjust width
+reactome <- ggplot(df_combined, aes(x = GeneRatio_signed, y = Description_wrapped, fill = p.adjust)) +
+  geom_col(width = 0.7) +
+  scale_fill_gradient(low = "lightblue", high = "darkblue") +
+  scale_x_continuous(labels = abs) +
+  labs(
+    x = "Gene Ratio",
+    y = "Reactome Pathway",
+    fill = "Adjusted p-value",
+    title = "Reactome Enrichment: Up vs Downregulated DEGs"
+  ) +
+  theme_classic(base_size = 8) +
+  theme(
+    plot.title = element_text(size = 8, face = "bold", hjust = 0.5),
+    axis.text.y = element_text(size = 8),
+    axis.title = element_text(size = 8)
+  )
+
 ###-----------------------------------figure 3C Inteferon alpha signaling enrichment-----------------------------------------------
 deg
 library(fgsea)
 library(msigdbr)
 library(dplyr)
-
 head(deg)
-m_df <- msigdbr(
-  species  = "Homo sapiens",
-  category = "H"
-)
+m_df <- msigdbr(  species  = "Homo sapiens", category = "H")
 pathways <- split(m_df$gene_symbol, m_df$gs_name)
-
 ranks <- deg$avg_log2FC
 names(ranks) <- deg$gene
 # remove NA + duplicates
@@ -241,32 +327,23 @@ ranks <- ranks[!is.na(ranks)]
 ranks <- ranks[!duplicated(names(ranks))]
 # rank genes
 ranks <- sort(ranks, decreasing = TRUE)
-
-fg <- fgsea(
-  pathways = pathways,
-  stats    = ranks,
-  minSize  = 10,
-  maxSize  = 500
-)
-
+fg <- fgsea(pathways = pathways,stats    = ranks, minSize  = 10, maxSize  = 500)
 fg <- fg[order(fg$padj), ]
 head(fg, 10)
 top_pathway <- fg$pathway[1]
+plotEnrichment(pathways[[top_pathway]], ranks) + ggtitle(top_pathway)
+# Convert leadingEdge list to a comma-separated string
+fg$leadingEdge <- sapply(fg$leadingEdge, function(x) paste(x, collapse = ", "))
+write.csv(fg, "hallmark_pathway_results.csv", row.names = FALSE)
 
-plotEnrichment(
-  pathways[[top_pathway]],
-  ranks
-) +
-  ggtitle(top_pathway)
-
-top_pathway <- "HALLMARK_INTERFERON_ALPHA_RESPONSE"  # explicitly set IFN-γ
-ifn_genes <- pathways[[top_pathway]]  # genes in IFN-γ pathway
+top_pathway <- "HALLMARK_INTERFERON_ALPHA_RESPONSE"
+ifn_genes <- pathways[[top_pathway]]
 
 # Extract stats
 nes_val <- round(fg$NES[fg$pathway == top_pathway], 2)
 padj_val <- signif(fg$padj[fg$pathway == top_pathway], 3)
 
-# 1. Enrichment curve with thicker green line
+# Enrichment curve
 p1 <- plotEnrichment(ifn_genes, ranks) +
   ggtitle(paste0("Enrichment plot: ", top_pathway)) +
   labs(
@@ -274,57 +351,138 @@ p1 <- plotEnrichment(ifn_genes, ranks) +
     x = NULL,
     y = "Enrichment Score (ES)"
   ) +
-  theme_bw(base_size = 14) +
+  theme_bw(base_size = 8) +
   theme(
-    plot.title = element_text(hjust = 0.5, face = "bold", size = 16),
-    plot.subtitle = element_text(hjust = 0.5, size = 12),
+    plot.title = element_text(hjust = 0.5, face = "bold", size = 8),
+    plot.subtitle = element_text(hjust = 0.5, size = 8),
     axis.text = element_text(color = "black"),
     axis.title = element_text(face = "bold"),
     legend.position = "none"
   )
-# 2. Ranking metric scores bar plot (bottom panel) with IFN-γ genes highlighted
+
+# Ranking metric barplot
 df_ranks <- data.frame(
   gene = names(ranks),
   rank = seq_along(ranks),
   score = ranks,
-  category = ifelse(names(ranks) %in% ifn_genes, "IFN-γ",
+  category = ifelse(names(ranks) %in% ifn_genes, "IFN-α",
                     ifelse(ranks > 0, "Up", "Down"))
 )
 
 p2 <- ggplot(df_ranks, aes(x = rank, y = score, fill = category)) +
   geom_bar(stat = "identity") +
-  scale_fill_manual(values = c("Up" = "red", "Down" = "blue", "IFN-γ" = "green")) +
-  theme_bw(base_size = 12) +
+  scale_fill_manual(
+    values = c("Up" = "red", "Down" = "blue", "IFN-α" = "green"),
+    labels = c("Up" = "Up", "Down" = "Down", "IFN-α" = expression(IFN~alpha))
+  ) +
+  theme_bw(base_size = 8) +
   labs(x = "Rank in Ordered Dataset", y = "Ranking metric scores", fill = "Gene Category") +
   theme(
     axis.text = element_text(color = "black"),
     axis.title = element_text(face = "bold")
   )
 
-# Combine enrichment curve (top) and barplot (bottom) 
-combined_plot = p1 / p2 + plot_layout(heights = c(2, 1))
+# Combine top and bottom panels
+combined_plot <- p1 / p2 + plot_layout(heights = c(2,1))
 
-###----------------------------------------------------------figure 3 D compare gene with human organoids treated with IFNgamma--------------------------------------
+###----------------------------------------------------------figure 3 D hallmark conjunction------------------------------------------------------------------------
+top_pathway1 <- "HALLMARK_COAGULATION"
+coag_genes <- pathways[[top_pathway1]]  # rename for clarity
+
+# NES and FDR values
+nes_val1 <- round(fg$NES[fg$pathway == top_pathway1], 2)
+padj_val1 <- signif(fg$padj[fg$pathway == top_pathway1], 3)
+
+# Enrichment plot
+p1_1 <- plotEnrichment(coag_genes, ranks) +
+  ggtitle("Enrichment plot: Inflammatory Coagulation / Epithelial Stress") +
+  labs(
+    subtitle = paste0("NES = ", nes_val1, ", FDR = ", padj_val1),
+    x = NULL,
+    y = "Enrichment Score (ES)"
+  ) +
+  theme_bw(base_size = 8) +
+  theme(
+    plot.title = element_text(hjust = 0.5, face = "bold", size = 8),
+    plot.subtitle = element_text(hjust = 0.5, size = 8),
+    axis.text = element_text(color = "black"),
+    axis.title = element_text(face = "bold"),
+    legend.position = "none"
+  )
+
+# Bar plot of ranks
+df_ranks1 <- data.frame(
+  gene = names(ranks),
+  rank = seq_along(ranks),
+  score = ranks,
+  category = ifelse(names(ranks) %in% coag_genes, "Coagulation",
+                    ifelse(ranks > 0, "Up", "Down"))
+)
+
+p2_2 <- ggplot(df_ranks1, aes(x = rank, y = score, fill = category)) +
+  geom_bar(stat = "identity") +
+  scale_fill_manual(
+    values = c("Up" = "red", "Down" = "blue", "Coagulation" = "green"),
+    labels = c("Up" = "Up", "Down" = "Down", "Coagulation" = "Inflammatory Coagulation")
+  ) +
+  theme_bw(base_size = 8) +
+  labs(x = "Rank in Ordered Dataset", y = "Ranking metric scores", fill = "Gene Category") +
+  theme(
+    axis.text = element_text(color = "black"),
+    axis.title = element_text(face = "bold")
+  )
+
+# Combine enrichment + bar plot
+combined_plot_1 <- p1_1 / p2_2 + plot_layout(heights = c(2,1))
 
 
+###---------------------------------------------------figure 3  compare with human organoids treated with IFN gamma-----------------------------------------------------------------------------
+#----------------this comparison dose not make sense, so do not do this in the figure graph-----------------------------------------------------------------------------------------------------
 
+deg
+counts_hOrg <- read_excel("C:\\Users\\leh\\OneDrive - TUNI.fi\\Desktop\\ISE LAB\\Ezh2_mouse_Markus_project\\HumanOrganoids_ZED1227_mRNAseq\\our data\\gene_count.xlsx")
+counts_hOrg <- as.data.frame(counts_hOrg)
 
+# Gene names
+gene_names <- make.unique(as.character(counts_hOrg$gene_name))
 
+# Count columns (adjust as needed)
+counts_hOrg <- counts_hOrg[, c(2:5, 10:13)]
+counts_hOrg <- as.data.frame(lapply(counts_hOrg, as.numeric))
+rownames(counts_hOrg) <- gene_names
 
+# Count matrix
+count_matrix_org <- round(as.matrix(counts_hOrg))
+storage.mode(count_matrix_org) <- "integer"
 
+# Remove genes with all zero counts
+count_matrix_org <- count_matrix_org[rowSums(count_matrix_org) > 0, ]
 
+# Sample metadata
+colnames(count_matrix_org) <- c("Mock1","Mock2","Mock3","Mock4","IFN1","IFN2","IFN3","IFN4")
+colData_org <- data.frame(
+  row.names = colnames(count_matrix_org),
+  condition = factor(c(rep("Mock",4), rep("IFN",4)))
+)
 
+# Set reference level
+colData_org$condition <- relevel(colData_org$condition, ref = "Mock")
 
+# DESeq2 dataset
+dds_org <- DESeqDataSetFromMatrix(countData = count_matrix_org, colData = colData_org, design = ~ condition)
+dds_org <- DESeq(dds_org)
+res_org <- results(dds_org)
+head(res_org)
 
+# RNA-seq
+res_org$gene <- rownames(res_org)
 
+up_rna <- res_org$gene[res_org$log2FoldChange > 1 & res_org$padj < 0.05]
+down_rna <- res_org$gene[res_org$log2FoldChange < -1 & res_org$padj < 0.05]
 
-
-
-
-###---------------------------------------------------figure 3 E selected GO enrichment with up and down regulated genes-------------------------------------------------------
-
-
-
+# scRNA-seq
+up_scrna <- deg$gene[deg$avg_log2FC > 0.25 & deg$p_val_adj < 0.05]
+down_scrna <- deg$gene[deg$avg_log2FC < -0.25 & deg$p_val_adj < 0.05]
 
 
 
@@ -370,18 +528,121 @@ mytheme <- theme_classic(base_family='sans') + theme(axis.text.x = element_text(
                                                      axis.text.x.top = element_text(color='#4daf4a',size=6))
 palette <- c(GFDd = "#00b347", GFDp = "#005923",PGCd = "#6500ff", PGCp = "#ff6500")
 
-# need to modify from here for grappign image
-filler <- ggplot()
-library(gridExtra)
-library(ggplot2)
-figure_qc <- ggarrange(
-  qc, qc_after,
-  ncol = 1,
-  labels = c("A", "B"),
+avocano
+reactome
+combined_plot
+combined_plot_1
+
+final_figure <- ggarrange(
+  avocano, reactome, combined_plot, combined_plot_1,
+  ncol = 2, nrow = 2,
+  labels = c("A", "B", "C", "D"),
   font.label = list(size = 16, face = "bold"),
-  align = "v"
+  hjust = -0.3,  # move left/right horizontally
+  vjust = 1.5    # move up/down vertically
 )
-ggexport(figure_qc,filename = "supplement_1.tiff",
-         width = 1800, # 7 inch max width 2100
-         height = 1700, 
-         res = 300) # Figure 
+
+# Display final figure
+print(final_figure)
+ setwd("~/Data/scRNA_2024/images_R_29052024_coding/analysis_2026")
+ggexport(final_figure,
+         filename = "Figure_3.tiff",
+         width = 2800,    # in pixels
+         height = 2000,   # in pixels
+         res = 300)  
+
+
+####--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+#----------------------------------------------------------Supplement data-------------------------------------------------------------------------------------------------------------------------
+##------------------------------AKT pathway enrichment--------------------------------------------------------------------
+top_pathway2 <- "HALLMARK_PI3K_AKT_MTOR_SIGNALING"  # explicitly set IFN-γ
+ifn_genes2 <- pathways[[top_pathway2]]  # genes in IFN-γ pathway
+
+# Extract stats
+nes_val2 <- round(fg$NES[fg$pathway == top_pathway2], 2)
+padj_val2 <- signif(fg$padj[fg$pathway == top_pathway2], 3)
+
+# 1. Enrichment curve with thicker green line
+p1_2 <- plotEnrichment(ifn_genes2, ranks) +
+  ggtitle(paste0("Enrichment plot: ", top_pathway1)) +
+  labs(
+    subtitle = paste0("NES = ", nes_val1, ", FDR = ", padj_val1),
+    x = NULL,
+    y = "Enrichment Score (ES)"
+  ) +
+  theme_bw(base_size = 14) +
+  theme(
+    plot.title = element_text(hjust = 0.5, face = "bold", size = 16),
+    plot.subtitle = element_text(hjust = 0.5, size = 12),
+    axis.text = element_text(color = "black"),
+    axis.title = element_text(face = "bold"),
+    legend.position = "none"
+  )
+
+# 2. Ranking metric scores bar plot (bottom panel) with IFN-γ genes highlighted
+df_ranks2 <- data.frame(
+  gene = names(ranks),
+  rank = seq_along(ranks),
+  score = ranks,
+  category = ifelse(names(ranks) %in% ifn_genes2, "AKT/PI3K",
+                    ifelse(ranks > 0, "Up", "Down"))
+)
+
+p2_2 <- ggplot(df_ranks2, aes(x = rank, y = score, fill = category)) +
+  geom_bar(stat = "identity") +
+  scale_fill_manual(values = c("Up" = "red", "Down" = "blue", "AKT/PI3K" = "green")) +
+  theme_bw(base_size = 12) +
+  labs(x = "Rank in Ordered Dataset", y = "Ranking metric scores", fill = "Gene Category") +
+  theme(
+    axis.text = element_text(color = "black"),
+    axis.title = element_text(face = "bold")
+  )
+
+# Combine enrichment curve (top) and barplot (bottom) 
+combined_plot_2 = p1_2 / p2_2 + plot_layout(heights = c(2, 1))
+
+###----------------------------------------------------------figure 3 D hallmark inteferon gamma response------------------------------------------------------------------------
+top_pathway1 <- "HALLMARK_INTERFERON_GAMMA_RESPONSE"
+ifn_genes1 <- pathways[[top_pathway1]]
+
+nes_val1 <- round(fg$NES[fg$pathway == top_pathway1], 2)
+padj_val1 <- signif(fg$padj[fg$pathway == top_pathway1], 3)
+
+p1_1 <- plotEnrichment(ifn_genes1, ranks) +
+  ggtitle(paste0("Enrichment plot: ", top_pathway1)) +
+  labs(
+    subtitle = paste0("NES = ", nes_val1, ", FDR = ", padj_val1),
+    x = NULL,
+    y = "Enrichment Score (ES)"
+  ) +
+  theme_bw(base_size = 8) +
+  theme(
+    plot.title = element_text(hjust = 0.5, face = "bold", size = 8),
+    plot.subtitle = element_text(hjust = 0.5, size = 8),
+    axis.text = element_text(color = "black"),
+    axis.title = element_text(face = "bold"),
+    legend.position = "none"
+  )
+
+df_ranks1 <- data.frame(
+  gene = names(ranks),
+  rank = seq_along(ranks),
+  score = ranks,
+  category = ifelse(names(ranks) %in% ifn_genes1, "IFN-γ",
+                    ifelse(ranks > 0, "Up", "Down"))
+)
+
+p2_2 <- ggplot(df_ranks1, aes(x = rank, y = score, fill = category)) +
+  geom_bar(stat = "identity") +
+  scale_fill_manual(
+    values = c("Up" = "red", "Down" = "blue", "IFN-γ" = "green"),
+    labels = c("Up" = "Up", "Down" = "Down", "IFN-γ" = expression(IFN~gamma))
+  ) +
+  theme_bw(base_size = 8) +
+  labs(x = "Rank in Ordered Dataset", y = "Ranking metric scores", fill = "Gene Category") +
+  theme(
+    axis.text = element_text(color = "black"),
+    axis.title = element_text(face = "bold")
+  )
+
+combined_plot_1 <- p1_1 / p2_2 + plot_layout(heights = c(2,1))
