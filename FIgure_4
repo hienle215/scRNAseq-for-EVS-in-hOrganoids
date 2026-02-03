@@ -31,18 +31,22 @@ heatmap = pheatmap( avg_exp,
 violin_plot = VlnPlot(test2, features = c("TGM2", "MUC5AC"))
 
 ###------------------------------------- figure 4C vocanol plot --------------------------------------------------------
-orig.ident <- as.vector(test2$orig.ident)
-orig.ident <- replace(test2, orig.ident == "Ctrl1", "Ctrl")
-orig.ident <- replace(test2, orig.ident == "Ctrl2", "Ctrl")
-orig.ident <- replace(test2, orig.ident == "CVB1", " CVB")
-orig.ident <- replace(test2, orig.ident == "CVB2", " CVB")
-test2$orig.ident <- NULL
-head(test2@meta.data)
-test2 <- AddMetaData(object = test2, metadata = orig.ident, col.name = 'study.rep')
-sub_sc = subset(test2, idents = "Immature goblets")
+# Merge orig.ident into Ctrl vs CVB
+orig.ident <- as.character(test2$orig.ident)
+orig.ident[orig.ident %in% c("Ctrl1", "Ctrl2")] <- "Ctrl"
+orig.ident[orig.ident %in% c("CVB1",  "CVB2")]  <- "CVB"
+
+# Add metadata
+test2$study.rep <- orig.ident
+
+# Subset cells
+sub_sc <- subset(test2, idents = "Immature goblets")
+
+# Set identities
 Idents(sub_sc) <- "study.rep"
-levels(Idents(sub_sc))
-deg_sub <- FindMarkers( sub_sc, ident.1 = "CVB",ident.2 = "Ctrl",logfc.threshold = 0.25,min.pct = 0.1, test.use = "wilcox")
+
+# Differential expression
+deg_sub <- FindMarkers( sub_sc,ident.1 = "CVB", ident.2 = "Ctrl", logfc.threshold = 0.25, min.pct = 0.1,  test.use = "wilcox")
 
 deg_sub$gene <- rownames(deg_sub)
 # Define significance thresholds
@@ -105,7 +109,7 @@ length(sig_genes)
 if(length(sig_genes) == 0){ stop("No significant genes with given threshold!")}
 sig_entrez <- bitr( sig_genes, fromType = "SYMBOL",  toType   = "ENTREZID", OrgDb    = org.Hs.eg.db)
 sig_entrez_ids <- unique(sig_entrez$ENTREZID)
-reactome_res_up <- enrichPathway(  gene = sig_entrez_ids, organism = "human", pvalueCutoff = 0.05, readable = TRUE)
+reactome_res_up <- enrichPathway(  gene = sig_entrez_ids, organism = "human", pvalueCutoff = 0.01, readable = TRUE)
 head(as.data.frame(reactome_res_up), 10)
 
 dotplot(reactome_res_up, showCategory = 15) +
@@ -119,7 +123,7 @@ pathways_of_interest <- c(
   "Interferon Signaling",
   "Antigen processing-Cross presentation",
   "Viral mRNA Translation",
-  "Peptide chain elongation"
+  "Peptide chain elongation", "Metabolism of amino acides and derivatives"
 )
 df_up <- as.data.frame(reactome_res_up) %>%
   dplyr::filter(Description %in% pathways_of_interest)
@@ -158,4 +162,110 @@ p <- dotplot(
 
 p
 
+###--------------------------------------Figure 4E goblet profileration-------------------------------------------------------------------------------------------------------------------
 ###-----------------------------Figure 4 E dotplot about goblet cell proliferation------------------------------------------------------------------------------------------------------------------
+goblet_diff_genes <- c(
+  "CLCA1", "SYTL2", "MUC2", "FCGBP", "PDE1B", "CREB3L1",
+  "AGR2", "ZG16", "SPDEF", "XBP1", "GOLGA7", "ST6GALNAC5",
+  "SMIM12", "DELBE2", "CD24EP3", "TSPAN13", "HDLBP", "SPINK4",
+  "MUC1", "ATOH1", "TFF3", "ABCA4", "BEPG3", "FAM3D", "TACSTD2",
+  "TM4SF4", "REG4", "AQP3", "RAMP1", "GCLM", "UGT2B7", "MDK",
+  "SLC16A7", "TM4SF5", "EIF4EBP1", "ANKRD27", "RPL36", "SPINK5",
+  "SERPINA6", "LMTD1", "C1ORF99", "VSIG2", "WFDC2", "BEST2",
+  "BEST4", "CLDN8", "MUC2L", "NUP62", "NUPL4", "TRABD2A", "CABAM3",
+  "MUC1", "PLCB4", "AC103702.2", "FCGBP", "CD24"
+)
+goblet_diff_genes <- unique(goblet_diff_genes)
+dotplot_goblet = DotPlot(sub_sc, features = goblet_diff_genes) + RotatedAxis()
+
+###-----------------------------------------------------------final figure 4---------------------------------------------------------------------------------------------------------------------------
+###----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+###-----------------------------------------------------------grapping images------------------------------------------------------------------------------------------------
+library(readxl)
+library(dplyr)
+library(numform)
+library(ggpubr)
+library(caTools)
+library(randomForest)
+library(readxl)
+library(stringr)
+library(caret)
+library(gridExtra)
+library(cowplot)
+
+mytheme <- theme_classic(base_family='sans') + theme(axis.text.x = element_text(size=6, color = "black"),
+                                                     axis.text.y= element_text(size=6, color = "black"),
+                                                     axis.title.y = element_text(size=8, color = "black"),
+                                                     axis.title.x = element_text(size=8, color = "black"),
+                                                     legend.text = element_text( size = 4, color = "black"),
+                                                     legend.key.size = unit(2, 'mm'),
+                                                     legend.position = "top",
+                                                     legend.title = element_blank(),
+                                                     plot.title = element_text(hjust = 0.5, size = 8,face = "bold"),
+                                                     axis.line = element_line(colour = "black", linewidth=1/.pt),
+                                                     strip.text.x = element_text(size = 6),
+                                                     strip.text.y = element_text(size = 6),
+                                                     panel.background = element_rect(fill = 'White'),
+                                                     panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+                                                     axis.title.x.top = element_text(color='#4daf4a',size=7), 
+                                                     axis.text.x.top = element_text(color='#4daf4a',size=6))
+palette <- c(GFDd = "#00b347", GFDp = "#005923",PGCd = "#6500ff", PGCp = "#ff6500")
+
+heatmap
+violin_plot
+avocano_sub
+p
+dotplot_goblet
+
+library(ggpubr)
+library(ggplotify)
+library(gridExtra)
+library(cowplot)  # for draw_plot_label
+
+# Convert pheatmap to ggplot
+heatmap_gg <- as.ggplot(heatmap)
+
+# Top-right B and C stacked
+right_top <- ggarrange(
+  violin_plot, avocano_sub,
+  ncol = 1,
+  heights = c(1, 1)
+)
+
+# Top group: heatmap (A) on left, B/C on right
+top_group <- ggarrange(
+  heatmap_gg, right_top,
+  ncol = 2,
+  widths = c(1.2, 1)
+)
+
+# Bottom row: D and E
+bottom_group <- ggarrange(
+  p, dotplot_goblet,
+  ncol = 2,
+  widths = c(1, 2)
+)
+
+# Combine top and bottom
+combined <- ggarrange(
+  top_group, bottom_group,
+  ncol = 1,
+  heights = c(2, 1)
+)
+
+final_plot <- ggdraw(combined) + 
+  draw_plot_label(
+    label = c("A", "B", "C", "D", "E"),
+    size = 16,
+    x = c(0.02, 0.5, 0.5, 0.02, 0.35),  # tweak x positions
+    y = c(0.98, 0.98, 0.7, 0.35, 0.35)   # tweak y positions
+  )
+
+final_plot
+setwd("~/Data/scRNA_2024/images_R_29052024_coding/analysis_2026")
+ggexport(final_plot,
+         filename = "Figure_4.tiff",
+         width = 3200,    # in pixels
+         height = 3500,   # in pixels
+         res = 300)  
+
