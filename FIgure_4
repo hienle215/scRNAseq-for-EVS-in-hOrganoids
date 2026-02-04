@@ -2,6 +2,7 @@
 #####-----------------------------------------------------continuing from Figure_3-------------------------------------------------------------------------------------------------------------------------------
 new.cluster.ids <- c("Immature enterocytes","Immature goblets", "Goblets","Enterocytes", "Undifferentiated cells","Stem/TA cells")
 test2 = ileum_infection_sc
+test2 = FindClusters(test2, resolution = 0.45)
 names(new.cluster.ids) <- levels(test2)
 test2 <- RenameIdents(test2, new.cluster.ids)
 UMAP <- DimPlot(test2, reduction = "umap", label = TRUE, pt.size = 1.5, label.size = 5) 
