@@ -432,8 +432,8 @@ df_ranks1 <- data.frame(
 p2_2 <- ggplot(df_ranks1, aes(x = rank, y = score, fill = category)) +
   geom_bar(stat = "identity") +
   scale_fill_manual(
-    values = c("Up" = "red", "Down" = "blue", "Coagulation" = "green"),
-    labels = c("Up" = "Up", "Down" = "Down", "Coagulation" = "Apoptosis")
+     values = c("Up" = "red", "Down" = "blue", "Apoptosis" = "green"),
+    labels = c("Up" = "Up", "Down" = "Down", "Apoptosis" = expression(Apoptosis))
   ) +
   theme_bw(base_size = 8) +
   labs(x = "Rank in Ordered Dataset", y = "Ranking metric scores", fill = "Gene Category") +
