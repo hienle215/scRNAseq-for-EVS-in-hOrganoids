@@ -265,7 +265,7 @@ pathways_of_interest <- c(
   "Interleukin-12 signaling",
   "Interleukin-12 family signaling",
   "Selective autophagy",
-  "IRAK2 mediated activation of TAK1 complex"
+  "IRAK2 mediated activation of TAK1 complex", "
 )
 df_up <- df_up %>% filter(Description %in% pathways_of_interest)
 df_up$regulation <- "Up"
@@ -295,6 +295,15 @@ df_combined <- df_combined %>%
   mutate(GeneRatio_signed = ifelse(regulation == "Down", -GeneRatio, GeneRatio))
 
 df_combined$Description_wrapped <- str_wrap(df_combined$Description, width = 30)  # adjust width
+df_combined <- df_combined %>%
+  mutate(
+    # Convert GeneRatio from string "a/b" → numeric a/b
+    GeneRatio_num = as.numeric(sapply(strsplit(GeneRatio, "/"), function(x) as.numeric(x[1])/as.numeric(x[2]))),
+    # Apply mirrored effect for Down regulation
+    GeneRatio_signed = ifelse(regulation == "Down", -GeneRatio_num, GeneRatio_num)
+  )
+df_combined$Description_wrapped <- str_wrap(df_combined$Description, width = 30)
+
 reactome <- ggplot(df_combined, aes(x = GeneRatio_signed, y = Description_wrapped, fill = p.adjust)) +
   geom_col(width = 0.7) +
   scale_fill_gradient(low = "lightblue", high = "darkblue") +
@@ -311,6 +320,7 @@ reactome <- ggplot(df_combined, aes(x = GeneRatio_signed, y = Description_wrappe
     axis.text.y = element_text(size = 8),
     axis.title = element_text(size = 8)
   )
+
 
 ###-----------------------------------figure 3C Inteferon alpha signaling enrichment-----------------------------------------------
 deg
@@ -345,7 +355,7 @@ padj_val <- signif(fg$padj[fg$pathway == top_pathway], 3)
 
 # Enrichment curve
 p1 <- plotEnrichment(ifn_genes, ranks) +
-  ggtitle(paste0("Enrichment plot: ", top_pathway)) +
+  ggtitle("Enrichment plot: IFN alpha response") +
   labs(
     subtitle = paste0("NES = ", nes_val, ", FDR = ", padj_val),
     x = NULL,
@@ -386,7 +396,7 @@ p2 <- ggplot(df_ranks, aes(x = rank, y = score, fill = category)) +
 combined_plot <- p1 / p2 + plot_layout(heights = c(2,1))
 
 ###----------------------------------------------------------figure 3 D hallmark conjunction------------------------------------------------------------------------
-top_pathway1 <- "HALLMARK_COAGULATION"
+top_pathway1 <- "HALLMARK_APOPTOSIS"
 coag_genes <- pathways[[top_pathway1]]  # rename for clarity
 
 # NES and FDR values
@@ -395,7 +405,7 @@ padj_val1 <- signif(fg$padj[fg$pathway == top_pathway1], 3)
 
 # Enrichment plot
 p1_1 <- plotEnrichment(coag_genes, ranks) +
-  ggtitle("Enrichment plot: Inflammatory Coagulation / Epithelial Stress") +
+  ggtitle("Enrichment plot: Apoptosis") +
   labs(
     subtitle = paste0("NES = ", nes_val1, ", FDR = ", padj_val1),
     x = NULL,
@@ -415,7 +425,7 @@ df_ranks1 <- data.frame(
   gene = names(ranks),
   rank = seq_along(ranks),
   score = ranks,
-  category = ifelse(names(ranks) %in% coag_genes, "Coagulation",
+  category = ifelse(names(ranks) %in% coag_genes, "Apoptosis",
                     ifelse(ranks > 0, "Up", "Down"))
 )
 
@@ -423,7 +433,7 @@ p2_2 <- ggplot(df_ranks1, aes(x = rank, y = score, fill = category)) +
   geom_bar(stat = "identity") +
   scale_fill_manual(
     values = c("Up" = "red", "Down" = "blue", "Coagulation" = "green"),
-    labels = c("Up" = "Up", "Down" = "Down", "Coagulation" = "Inflammatory Coagulation")
+    labels = c("Up" = "Up", "Down" = "Down", "Coagulation" = "Apoptosis")
   ) +
   theme_bw(base_size = 8) +
   labs(x = "Rank in Ordered Dataset", y = "Ranking metric scores", fill = "Gene Category") +
