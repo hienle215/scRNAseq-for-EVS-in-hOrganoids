@@ -1,0 +1,81 @@
+####-------------------------------------------------Figure 5A----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+###---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+### correlation expression between cell-cell in perellation, the code starts from the code in figure 3------------------------------------------------------------------------------------------------------------------------------------------
+
+library(Seurat)
+library(pheatmap)
+
+set.seed(123) # for reproducibility
+
+# ------------------------------
+# 1. Subsample cells per group
+# ------------------------------
+cells_per_group <- 50  # max number of cells per cell type
+cell_types <- Idents(test2)
+
+cells_sub <- unlist(lapply(levels(cell_types), function(ct) {
+  cells <- WhichCells(test2, idents = ct)
+  sample(cells, min(length(cells), cells_per_group))
+}))
+
+# ------------------------------
+# 2. Extract top HVGs and expression
+# ------------------------------
+top_hvg <- head(VariableFeatures(test2), 500)  # top 500 HVGs
+expr_mat <- GetAssayData(test2, slot = "data")[top_hvg, cells_sub]
+expr_mat_dense <- as.matrix(expr_mat)  # convert sparse -> dense
+
+# ------------------------------
+# 3. Compute cell-cell correlation
+# ------------------------------
+cell_cor <- cor(expr_mat_dense, method = "pearson")
+
+# ------------------------------
+# 4. Order cells by cell type (no mixing)
+# ------------------------------
+ordered_cells <- unlist(lapply(levels(cell_types), function(ct) {
+  intersect(cells_sub, WhichCells(test2, idents = ct))
+}))
+cell_cor <- cell_cor[ordered_cells, ordered_cells]
+
+# ------------------------------
+# 5. Prepare annotation and group gaps
+# ------------------------------
+annotation_col <- data.frame(CellType = cell_types[ordered_cells])
+rownames(annotation_col) <- ordered_cells
+
+# Lines to separate cell types
+group_sizes <- table(cell_types[ordered_cells])
+gaps <- cumsum(group_sizes)
+
+# Optional: color for each cell type
+celltype_colors <- c(
+  "Immature enterocytes" = "#1f77b4",
+  "Immature goblets" = "#ff7f0e",
+  "Goblets" = "#2ca02c",
+  "Enterocytes" = "#d62728",
+  "Undifferentiated cells" = "#9467bd",
+  "Stem/TA cells" = "#8c564b"
+)
+
+# ------------------------------
+# 6. Plot heatmap
+# ------------------------------
+heatmap_correlation = pheatmap(cell_cor,
+         show_rownames = FALSE,
+         show_colnames = FALSE,
+         cluster_rows = FALSE,
+         cluster_cols = FALSE,
+         gaps_row = gaps,
+         gaps_col = gaps,
+         annotation_row = annotation_col,  # <-- add row annotation
+         annotation_col = annotation_col,
+         annotation_colors = list(CellType = celltype_colors),
+         color = colorRampPalette(c("blue","white","red"))(100),
+         main = "Cell-cell Pearson correlation")
+setwd("~/Data/scRNA_2024/images_R_29052024_coding/analysis_2026")
+ggexport(heatmap_correlation,
+         filename = "Figure_5A.tiff",
+         width = 2500,    # in pixels
+         height = 2000,   # in pixels
+         res = 300)  
