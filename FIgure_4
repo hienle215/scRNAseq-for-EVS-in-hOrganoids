@@ -93,7 +93,7 @@ avocano_sub <- ggplot(deg_sub, aes(x = avg_log2FC, y = -log10(p_val_adj), color 
 
 ###------------------------------------------Figure 4D heatmap of reactome enrichment--------------------------------------------------------------------------------------------------
 deg_sub$significance <- "Not Significant"
-deg_sub$significance[deg_sub$p_val_adj < 0.05 & abs(deg_sub$avg_log2FC > 0.25] <- "Significant"
+deg_sub$significance[deg_sub$p_val_adj < 0.05 & abs(deg_sub$avg_log2FC) > 0.25] <- "Significant"
 
 # Define up/down/non-significant
 deg_sub$regulation <- "Not Significant"
@@ -151,11 +151,11 @@ p <- dotplot(
 ) +
   scale_y_discrete(labels = function(x) str_wrap(x, width = 35)) +
   labs(
-    title = "Reactome Pathway Enrichment (Upregulated Genes)",
+    title = "Reactome Pathway Enrichment",
     y = "Reactome Pathway",
     x = "Gene Ratio"
   ) +
-  theme_classic(base_size = 10) +
+  theme_classic(base_size = 8) +
   theme(
     plot.title = element_text(face = "bold", hjust = 0.5),
     axis.text.y = element_text(size = 9)
@@ -177,7 +177,79 @@ goblet_diff_genes <- c(
   "MUC1", "PLCB4", "AC103702.2", "FCGBP", "CD24"
 )
 goblet_diff_genes <- unique(goblet_diff_genes)
+
+goblet_early <- c("ATOH1","SPDEF","XBP1","CREB3L1","GOLGA7","SPINK4","ZG16")
+goblet_proliferation <- c("EIF4EBP1","RPL36","HDLBP","ANKRD27","GCLM")
+goblet_intermediate <- c("MUC2","TFF3","FCGBP","AGR2","CLCA1","REG4",
+                         "TM4SF4","TM4SF5","SPINK5","ST6GALNAC5","ABCA4")
+goblet_mature <- c("BEST2","BEST4","CD24","FAM3D","VSIG2","SERPINA6",
+                   "C1ORF99") 
+
+goblet_diff_genes <- unique(goblet_diff_genes)
 dotplot_goblet = DotPlot(sub_sc, features = goblet_diff_genes) + RotatedAxis()
+
+library(Seurat)
+library(ggplot2)
+library(dplyr)
+
+# Your genes
+goblet_diff_genes <- c(
+  "CLCA1", "SYTL2", "MUC2", "FCGBP", "PDE1B", "CREB3L1",
+  "AGR2", "ZG16", "SPDEF", "XBP1", "GOLGA7", "ST6GALNAC5",
+  "SMIM12", "DELBE2", "CD24EP3", "TSPAN13", "HDLBP", "SPINK4",
+  "MUC1", "ATOH1", "TFF3", "ABCA4", "BEPG3", "FAM3D", "TACSTD2",
+  "TM4SF4", "REG4", "AQP3", "RAMP1", "GCLM", "UGT2B7", "MDK",
+  "SLC16A7", "TM4SF5", "EIF4EBP1", "ANKRD27", "RPL36", "SPINK5",
+  "SERPINA6", "LMTD1", "C1ORF99", "VSIG2", "WFDC2", "BEST2",
+  "BEST4", "CLDN8", "MUC2L", "NUP62", "NUPL4", "TRABD2A", "CABAM3",
+  "MUC1", "PLCB4", "AC103702.2", "FCGBP", "CD24"
+)
+
+# Assign stage labels
+stage_list <- list(
+  Early = c("ATOH1","SPDEF","XBP1","CREB3L1","GOLGA7","SPINK4","ZG16"),
+  Proliferation = c("EIF4EBP1","RPL36","HDLBP","ANKRD27","GCLM"),
+  Intermediate = c("MUC2","TFF3","FCGBP","AGR2","CLCA1","REG4",
+                   "TM4SF4","TM4SF5","SPINK5","ST6GALNAC5","ABCA4"),
+  Mature = c("BEST2","BEST4","CD24","FAM3D","VSIG2","SERPINA6","C1ORF99")
+)
+
+# Create a named vector of stages for all genes
+gene_stage <- unlist(lapply(names(stage_list), function(stage) {
+  setNames(rep(stage, length(stage_list[[stage]])), stage_list[[stage]])
+}))
+
+# Make sure the order of genes in your dotplot matches your stage order
+goblet_diff_genes_ordered <- c(stage_list$Early, stage_list$Proliferation,
+                               stage_list$Intermediate, stage_list$Mature)
+
+# Convert cluster identities to numeric for positioning
+dot_data <- dot_data %>%
+  mutate(id_numeric = as.numeric(as.factor(id)))
+
+# Compute x positions for stage labels
+stage_positions <- stage_df %>%
+  group_by(stage) %>%
+  summarise(x = mean(match(gene, goblet_diff_genes_ordered)))
+
+# Find max y position (numeric)
+y_max <- max(dot_data$id_numeric) + 0.5
+
+# Plot
+final_dotplot = ggplot(dot_data, aes(x = features.plot, y = id, size = pct.exp, color = avg.exp.scaled)) +
+  geom_point() +
+theme_classic() + 
+scale_color_gradient(low = "lightblue", high = "darkblue") +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5)) +
+  labs(x = NULL, y = "Identity") + 
+  geom_vline(data = data.frame(x = cumsum(table(stage_df$stage)) + 0.5), 
+             aes(xintercept = x), linetype = "dashed", color = "red") +
+  # Add stage names above plot
+  geom_text(data = stage_positions, aes(x = x, y = y_max, label = stage),
+            inherit.aes = FALSE, fontface = "bold") +
+  ggtitle("Goblet Cell Differentiation") +
+  theme(plot.title = element_text(hjust = 0.5)) 
+
 
 ###-----------------------------------------------------------final figure 4---------------------------------------------------------------------------------------------------------------------------
 ###----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
@@ -216,7 +288,7 @@ heatmap
 violin_plot
 avocano_sub
 p
-dotplot_goblet
+final_dotplot
 
 library(ggpubr)
 library(ggplotify)
@@ -242,7 +314,7 @@ top_group <- ggarrange(
 
 # Bottom row: D and E
 bottom_group <- ggarrange(
-  p, dotplot_goblet,
+  p, final_dotplot,
   ncol = 2,
   widths = c(1, 2)
 )
@@ -266,7 +338,7 @@ final_plot
 setwd("~/Data/scRNA_2024/images_R_29052024_coding/analysis_2026")
 ggexport(final_plot,
          filename = "Figure_4.tiff",
-         width = 3200,    # in pixels
-         height = 3500,   # in pixels
+         width = 3500,    # in pixels
+         height = 3000,   # in pixels
          res = 300)  
 
